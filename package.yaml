@@ -1,0 +1,16 @@
+name: dynamic-pipeline
+version: '0.1.0.0'
+category: Data,Data Flow,Pipes
+author: Juan Pablo Royo Sales
+maintainer: juanpablo.royo@gmail.com
+copyright: Copyright (C) 2021 Juan Pablo Royo Sales
+license: BSD3
+github: jproyo/dynamic-pipeline
+extra-source-files:
+- README.md
+dependencies:
+- base >=4.7 && <5
+library:
+  source-dirs: src
+  exposed-modules:
+  - Lib
