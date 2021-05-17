@@ -4,13 +4,13 @@ module Dynamic.Pipeline where
 
 --import qualified Control.Concurrent            as CC
 --import           Control.Concurrent.Async
-import           Control.Concurrent.Chan.Unagi.NoBlocking
-                                         hiding ( Stream )
+import           Control.Concurrent.Chan.Unagi.NoBlocking                                                      hiding ( Stream
+                                                                                                                      )
 --import           Data.ByteString               as B
-import           Relude                  hiding ( map
-                                                , mapM
-                                                , traverse
-                                                )
+import           Relude                                                                                        hiding ( map
+                                                                                                                      , mapM
+                                                                                                                      , traverse
+                                                                                                                      )
 --import qualified Relude                        as R
 
 type Edge = (,)
@@ -27,19 +27,16 @@ type Input = Stage
 type Generator ins outs eff = Filter ins outs eff
 type Output = Stage
 
-runDp :: Input ins outs IO 
-      -> Generator outs outs2 IO 
-      -> Output outs2 outs2 IO 
-      -> IO ()
-runDp = undefined 
+runDp :: Input ins outs IO -> Generator outs outs2 IO -> Output outs2 outs2 IO -> IO ()
+runDp = undefined
 
-data IC = IC
-  { inChannel1  :: Channel (Int,Int)
-  , inChannel2  :: Channel [Int]
+data IC = ICq
+  { inChannel1 :: Channel (Int, Int)
+  , inChannel2 :: Channel [Int]
   }
 
 data C = C
-  { outChannel1 :: Channel (Int,Int)
+  { outChannel1 :: Channel (Int, Int)
   , outChannel2 :: Channel [Int]
   }
 
