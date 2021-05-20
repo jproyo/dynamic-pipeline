@@ -17,6 +17,33 @@ type Edge = (,)
 
 newtype Channel a = Channel (InChan (Maybe a), OutChan (Maybe a))
 
+{-
+<- defineDP $ do 
+    shareChanIn <- createChan @Int
+    input $ do 
+      otherChanIn <- createChan @(Int, Int)
+      outputChan <- createChan @[Int]
+      onAction $ do 
+
+-}
+
+{-
+>>> import           Control.Concurrent.Chan.Unagi.NoBlocking
+>>> newChan @(Maybe (Int,Int))
+>>> let a = Channel it
+>>> newChan @(Maybe Int)
+>>> let b = Channel it
+>>> :t a :* b 
+-}
+data Channels (ts :: [*]) where
+  (:*) :: forall t t'. Channel t -> Channel t' -> Channels '[Channel t, Channel t']
+  (:#) :: forall t (ts :: [*]). Channel t -> Channels ts -> Channels (Channel t ': ts)
+infixr 5 :#
+infixr 5 :*
+
+-- data DP (inp :: [Channel :: * -> *]) (gen :: [Channel a]) (outp :: [Channel a]) where
+--   DP :: inp -> gen -> outp -> DP inp gen outp
+
 data Chan list = Chan
 
 newtype Code inChans outChans (eff :: * -> *) = Code (Chan inChans -> Chan outChans -> eff ())
@@ -30,7 +57,7 @@ type Output = Stage
 runDp :: Input ins outs IO -> Generator outs outs2 IO -> Output outs2 outs2 IO -> IO ()
 runDp = undefined
 
-data IC = ICq
+data IC = IC
   { inChannel1 :: Channel (Int, Int)
   , inChannel2 :: Channel [Int]
   }
