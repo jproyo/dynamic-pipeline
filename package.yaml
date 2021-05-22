@@ -24,10 +24,13 @@ ghc-options:
 default-extensions:
   - ConstraintKinds
   - DataKinds
+  - DefaultSignatures
   - DeriveAnyClass
+  - DeriveFoldable
   - DeriveFunctor
   - DeriveGeneric
   - DeriveLift
+  - DeriveTraversable
   - DerivingStrategies
   - DerivingVia
   - EmptyCase
@@ -43,6 +46,7 @@ default-extensions:
   - OverloadedStrings
   - PackageImports
   - PartialTypeSignatures
+  - PolyKinds
   - Rank2Types
   - RankNTypes
   - RecordWildCards
@@ -68,7 +72,7 @@ dependencies:
 library:
   source-dirs: src
   exposed-modules:
-    - Dynamic.Pipeline
+    - DynamicPipeline
   when:
     - condition: false
       other-modules: Paths_connected_comp

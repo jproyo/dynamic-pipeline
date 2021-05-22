@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 38b9ce6eabd33a44141baf0b72ac2521632e39280932934675e4b15092e478f9
+-- hash: e0c931d2b4ee6185c3580ac734a141495dcceccbee4b0be3ed41c576c06d240b
 
 name:           dynamic-pipeline
 version:        0.1.0.0
@@ -26,12 +26,14 @@ source-repository head
 
 library
   exposed-modules:
-      Dynamic.Pipeline
+      DynamicPipeline
   other-modules:
+      DP.Generics
+      DP.Internal
       Paths_dynamic_pipeline
   hs-source-dirs:
       src
-  default-extensions: ConstraintKinds DataKinds DeriveAnyClass DeriveFunctor DeriveGeneric DeriveLift DerivingStrategies DerivingVia EmptyCase FlexibleContexts FlexibleInstances FunctionalDependencies GADTs GeneralizedNewtypeDeriving LambdaCase MultiParamTypeClasses MultiWayIf NoImplicitPrelude OverloadedStrings PackageImports PartialTypeSignatures Rank2Types RankNTypes RecordWildCards ScopedTypeVariables StandaloneDeriving TemplateHaskell TupleSections TypeApplications TypeOperators TypeFamilies
+  default-extensions: ConstraintKinds DataKinds DefaultSignatures DeriveAnyClass DeriveFoldable DeriveFunctor DeriveGeneric DeriveLift DeriveTraversable DerivingStrategies DerivingVia EmptyCase FlexibleContexts FlexibleInstances FunctionalDependencies GADTs GeneralizedNewtypeDeriving LambdaCase MultiParamTypeClasses MultiWayIf NoImplicitPrelude OverloadedStrings PackageImports PartialTypeSignatures PolyKinds Rank2Types RankNTypes RecordWildCards ScopedTypeVariables StandaloneDeriving TemplateHaskell TupleSections TypeApplications TypeOperators TypeFamilies
   ghc-options: -Wall -fno-warn-partial-type-signatures -fconstraint-solver-iterations=0 -Wincomplete-record-updates -Wincomplete-uni-patterns -Wredundant-constraints -Wno-unused-top-binds -fno-warn-deprecations -fno-warn-orphans
   build-depends:
       HList
@@ -55,7 +57,7 @@ test-suite conn-comp-tests
       Paths_dynamic_pipeline
   hs-source-dirs:
       test
-  default-extensions: ConstraintKinds DataKinds DeriveAnyClass DeriveFunctor DeriveGeneric DeriveLift DerivingStrategies DerivingVia EmptyCase FlexibleContexts FlexibleInstances FunctionalDependencies GADTs GeneralizedNewtypeDeriving LambdaCase MultiParamTypeClasses MultiWayIf NoImplicitPrelude OverloadedStrings PackageImports PartialTypeSignatures Rank2Types RankNTypes RecordWildCards ScopedTypeVariables StandaloneDeriving TemplateHaskell TupleSections TypeApplications TypeOperators TypeFamilies
+  default-extensions: ConstraintKinds DataKinds DefaultSignatures DeriveAnyClass DeriveFoldable DeriveFunctor DeriveGeneric DeriveLift DeriveTraversable DerivingStrategies DerivingVia EmptyCase FlexibleContexts FlexibleInstances FunctionalDependencies GADTs GeneralizedNewtypeDeriving LambdaCase MultiParamTypeClasses MultiWayIf NoImplicitPrelude OverloadedStrings PackageImports PartialTypeSignatures PolyKinds Rank2Types RankNTypes RecordWildCards ScopedTypeVariables StandaloneDeriving TemplateHaskell TupleSections TypeApplications TypeOperators TypeFamilies
   ghc-options: -Wall -fno-warn-partial-type-signatures -fconstraint-solver-iterations=0 -Wincomplete-record-updates -Wincomplete-uni-patterns -Wredundant-constraints -Wno-unused-top-binds -fno-warn-deprecations -fno-warn-orphans -threaded -O2 -rtsopts -with-rtsopts=-N -Wno-unused-local-binds -Wno-unused-matches
   build-tool-depends:
       hspec-discover:hspec-discover

@@ -1,8 +1,10 @@
-{-# LANGUAGE TypeOperators      #-}
-{-# LANGUAGE PolyKinds      #-}
-module Dynamic.Pipeline where
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE UndecidableInstances #-}
 
---import qualified Control.Concurrent            as CC
+module DP.Internal where
+
+import Unsafe.Coerce
+import qualified Control.Concurrent            as CC
 --import           Control.Concurrent.Async
 import           Control.Concurrent.Chan.Unagi.NoBlocking                                                      hiding ( Stream
                                                                                                                       )
@@ -26,27 +28,96 @@ newtype Channel a = Channel (InChan (Maybe a), OutChan (Maybe a))
       onAction $ do 
 
 -}
+data chann1 :<+> chann2 = chann1 :<+> chann2
+ deriving (Typeable, Eq, Show, Functor, Traversable, Foldable, Bounded)
+infixr 5 :<+>
 
-{-
->>> import           Control.Concurrent.Chan.Unagi.NoBlocking
->>> newChan @(Maybe (Int,Int))
->>> let a = Channel it
->>> newChan @(Maybe Int)
->>> let b = Channel it
->>> :t a :* b 
--}
-data Channels (ts :: [*]) where
-  (:*) :: forall t t'. Channel t -> Channel t' -> Channels '[Channel t, Channel t']
-  (:#) :: forall t (ts :: [*]). Channel t -> Channels ts -> Channels (Channel t ': ts)
-infixr 5 :#
-infixr 5 :*
+data a :|= b = a :|= b
+  deriving (Typeable, Eq, Show, Functor, Traversable, Foldable, Bounded)
+infixr 5 :|=
 
--- data DP (inp :: [Channel :: * -> *]) (gen :: [Channel a]) (outp :: [Channel a]) where
---   DP :: inp -> gen -> outp -> DP inp gen outp
+data ChanIn (a :: *)
+data ChanOut (a :: *)
 
-data Chan list = Chan
+-- Associated Type Classes
+class Monad m => HasChannel a m where
+  type Chans a m :: *
 
-newtype Code inChans outChans (eff :: * -> *) = Code (Chan inChans -> Chan outChans -> eff ())
+instance Monad m => HasChannel (ChanOut a) m where
+  type Chans (ChanOut a) m = Channel a -> m ()
+
+-- instance Monad m => HasChannel (ChanIn a) m where
+--   type Chans (ChanIn a) m = Channel a
+
+-- instance Monad m => HasChannel (ChanIn a :<+> more) m where
+--   type Chans (ChanIn a :<+> more) m = Channel a -> Chans more m
+
+instance Monad m => HasChannel (ChanIn a) m where
+   type Chans (ChanIn a) m = Maybe a
+
+instance Monad m => HasChannel (ChanIn a :<+> more) m where
+  type Chans (ChanIn a :<+> more) m = Maybe a -> Chans more m
+
+instance Monad m => HasChannel (ChanOut a :<+> more) m where
+  type Chans (ChanOut a :<+> more) m = Channel a -> Chans more m
+
+instance Monad m => HasChannel (input :|= output) m where
+  type Chans (input :|= output) m = Chans input m -> Chans output m
+
+-- class CreateChannels a where
+--   type CChans a :: *
+-- --  toF :: 
+
+-- instance Monad m => CreateChannels (ChanIn a) m where
+--   type CChans (ChanIn a) m = Channel a
+
+-- instance Monad m => CreateChannels (ChanIn a :<+> more) m where
+--   type CChans (ChanIn a :<+> more) m = Channel a -> Chans more m
+
+
+-- Defunctionalization
+data ExecF a where
+  ExecF :: HasChannel a m => Proxy a -> Chans a m -> ExecF (Chans a m)
+
+class Eval l t | l -> t where
+  eval :: l -> t
+
+instance forall a b. (a ~ b) => Eval (ExecF a) b where
+  eval (ExecF _ f) = f
+
+-- Declaration of Channels
+type X = ChanIn Int :<+> ChanIn (Int,Int) :|= ChanOut Int :<+> ChanOut (Int,Int)
+
+myfn :: Maybe Int -> Maybe (Int, Int) -> Channel Int -> Channel (Int, Int) -> IO ()
+myfn a b _ _ = do
+  print a
+  print b
+  return ()
+
+-- Expanded Channels by the compiler asking for the function required according to what the user declare according to X type
+--some' :: ExecF (Channel Int -> Channel (Int, Int) -> Channel Int -> Channel (Int, Int) -> IO ())
+--some' :: ExecF (Int -> (Int, Int) -> Channel Int -> Channel (Int, Int) -> IO ())
+some' :: ExecF
+  (Maybe Int
+   -> Maybe (Int, Int) -> Channel Int -> Channel (Int, Int) -> IO ())
+some' = ExecF (Proxy @X) myfn
+
+x :: IO ()
+x = do 
+  a <- Channel <$> newChan @(Maybe Int)
+  b <- Channel <$> newChan @(Maybe (Int,Int))
+  push' 1 a
+  push' 2 a
+  push' (3,4) b
+  push' (5,6) b
+  a' <- pull' a
+  b' <- pull' b
+  eval some' a' b' a b
+
+-- data DP inp gen outp where
+--   DP ::Stage inp inp IO -> Stage gen gen IO -> Stage outp outp IO -> DP inp gen outp
+
+newtype Code inChans outChans (eff :: * -> *) = Code (Proxy inChans -> Proxy outChans -> eff ())
 newtype Stage inChans outChans (eff :: * -> *) = Stage { runStage :: Code inChans outChans eff }
 newtype Filter inChans outChans (eff :: * -> *) = Filter { actors :: [Stage inChans outChans eff]}
 
@@ -102,9 +173,9 @@ runDp stageInput stageGenerator stageOutput :: IO ()
 -- endOut :: Stage a b -> IO ()
 -- endOut = end' . outChannel
 
--- {-# INLINE push' #-}
--- push' :: a -> Channel a -> IO ()
--- push' e = flip writeChan (Just e) . fst
+{-# INLINE push' #-}
+push' :: a -> Channel a -> IO ()
+push' e = flip writeChan (Just e) . fst . unsafeCoerce
 
 -- {-# INLINE pushOut #-}
 -- pushOut :: b -> Stage a b -> IO ()
@@ -114,9 +185,9 @@ runDp stageInput stageGenerator stageOutput :: IO ()
 -- pushIn :: a -> Stage a b -> IO ()
 -- pushIn e = push' e . inChannel
 
--- {-# INLINE pull' #-}
--- pull' :: Channel a -> IO (Maybe a)
--- pull' = readChan (CC.threadDelay 100) . snd
+{-# INLINE pull' #-}
+pull' :: Channel a -> IO (Maybe a)
+pull' = readChan (CC.threadDelay 100) . snd . unsafeCoerce
 
 -- {-# INLINE pullIn #-}
 -- pullIn :: Stage a b -> IO (Maybe a)
