@@ -5,29 +5,20 @@ module DP.Internal where
 
 import Unsafe.Coerce
 import qualified Control.Concurrent            as CC
---import           Control.Concurrent.Async
 import           Control.Concurrent.Chan.Unagi.NoBlocking                                                      hiding ( Stream
                                                                                                                       )
---import           Data.ByteString               as B
 import           Relude                                                                                        hiding ( map
                                                                                                                       , mapM
                                                                                                                       , traverse
                                                                                                                       )
---import qualified Relude                        as R
+import GHC.TypeLits
+import Data.HList
+
 
 type Edge = (,)
 
 newtype Channel a = Channel (InChan (Maybe a), OutChan (Maybe a))
 
-{-
-<- defineDP $ do 
-    shareChanIn <- createChan @Int
-    input $ do 
-      otherChanIn <- createChan @(Int, Int)
-      outputChan <- createChan @[Int]
-      onAction $ do 
-
--}
 data chann1 :<+> chann2 = chann1 :<+> chann2
  deriving (Typeable, Eq, Show, Functor, Traversable, Foldable, Bounded)
 infixr 5 :<+>
@@ -36,134 +27,232 @@ data a :|= b = a :|= b
   deriving (Typeable, Eq, Show, Functor, Traversable, Foldable, Bounded)
 infixr 5 :|=
 
-data ChanIn (a :: *)
-data ChanOut (a :: *)
+data a :>> b = a :>> b
+  deriving (Typeable, Eq, Show, Functor, Traversable, Foldable, Bounded)
+infixr 5 :>>
 
--- Associated Type Classes
-class Monad m => HasChannel a m where
-  type Chans a m :: *
+data ChanIn (a :: Type)
+data ChanOut (a :: Type)
+data EOF
 
-instance Monad m => HasChannel (ChanOut a) m where
-  type Chans (ChanOut a) m = Channel a -> m ()
+-- Inductive Type Family
+type family Chans (a :: Type) (m :: Type -> Type) :: Type where
+  Chans EOF m = m ()
+  Chans (ChanOut a) m = Channel a
+  Chans (ChanIn a) m = Maybe a
+  Chans (ChanOut a :<+> ChanIn b :|= other) m = TypeError
+                                                  ( 'Text "Cannot combine Input Channel with Output Channel to form a big channel"
+                                                    ':$$: 'Text "in the type '"
+                                                    ':<>: 'ShowType (ChanIn a :<+> ChanOut b)
+                                                    ':<>: 'Text "'"
+                                                    ':$$: 'Text "You can only combine to form a big channel Inputs or Outputs."
+                                                    ':$$: 'Text "Example: ChanIn Int :<+> ChanIn String ... OR ChanOut Int :<+> ChanOut String ..."
+                                                  )
+  Chans (ChanIn a :<+> ChanOut b :|= other) m = TypeError
+                                                  ( 'Text "Cannot combine Input Channel with Output Channel to form a big channel"
+                                                    ':$$: 'Text "in the type '"
+                                                    ':<>: 'ShowType (ChanIn a :<+> ChanOut b)
+                                                    ':<>: 'Text "'"
+                                                    ':$$: 'Text "You can only combine to form a big channel Inputs or Outputs."
+                                                    ':$$: 'Text "Example: ChanIn Int :<+> ChanIn String ... OR ChanOut Int :<+> ChanOut String ..."
+                                                  )
+  Chans (ChanIn a :<+> more) m = Maybe a -> Chans more m
+  Chans (ChanOut a :<+> more) m = Channel a -> Chans more m
+  Chans (ChanIn a :|= ChanIn b) m = TypeError
+                                      ( 'Text "Input Channel cannot be Connected to other Input Channel"
+                                        ':$$: 'Text "in the type '"
+                                        ':<>: 'ShowType (ChanIn a :|= ChanIn b)
+                                        ':<>: 'Text "'"
+                                        ':$$: 'Text "Input must be connected to Output only."
+                                        ':$$: 'Text "Example: ChanIn Int :<+> ChanIn String :|= ChanOut Int :<+> ChanOut String"
+                                      )
+  Chans (ChanOut a :|= ChanOut b) m = TypeError
+                                      ( 'Text "Output Channel cannot be Connected to other Output Channel"
+                                        ':$$: 'Text "in the type '"
+                                        ':<>: 'ShowType (ChanIn a :|= ChanIn b)
+                                        ':<>: 'Text "'"
+                                        ':$$: 'Text "Output must be connected to EOF only."
+                                        ':$$: 'Text "Example: ChanOut Int :<+> ChanOut String :|= EOF"
+                                      )
+  Chans (input :|= output) m = Chans input m -> Chans output m
 
--- instance Monad m => HasChannel (ChanIn a) m where
---   type Chans (ChanIn a) m = Channel a
+type family EvalTerm (a :: Type) :: Bool where
+  EvalTerm (x :|= EOF) = 'True
+  EvalTerm (x :|= y)   = EvalTerm y
+  EvalTerm (x :<+> y)  = EvalTerm y
+  EvalTerm x           = 'False
 
--- instance Monad m => HasChannel (ChanIn a :<+> more) m where
---   type Chans (ChanIn a :<+> more) m = Channel a -> Chans more m
+type family RequireEOF (a :: Bool) :: Constraint where
+  RequireEOF 'True = ()
+  RequireEOF 'False = TypeError
+                        ( 'Text "EOF Termination is Required for building Channel chain"
+                          ':$$: 'Text "Example: ChanIn Int :|= ChanOut String :|= EOF"
+                          ':$$: 'Text "Example: ChanIn Int :<+> ChanIn String :|= ChanOut Int :<+> ChanOut String :|= EOF"
+                        )
+                        
+type family TyEq (a :: k) (b :: k2) :: Bool where
+  TyEq a a = 'True
+  TyEq a b = 'False
 
-instance Monad m => HasChannel (ChanIn a) m where
-   type Chans (ChanIn a) m = Maybe a
+type family And (a :: Bool) (b :: Bool) :: Bool where
+  And 'True 'True = 'True
+  And x     y     = 'False
 
-instance Monad m => HasChannel (ChanIn a :<+> more) m where
-  type Chans (ChanIn a :<+> more) m = Maybe a -> Chans more m
+type family EvalDP (a :: k) :: Bool where
+  EvalDP (ins :>> gen :>> outs)                                = And (EvalDP (ins :>> gen)) (EvalDP (gen :>> outs))
+  EvalDP ((ins :|= outs :|= EOF) :>> (ins' :|= outs' :|= EOF)) = EvalDP (outs :>> ins')
+  EvalDP ((ins :|= outs :|= EOF) :>> (ins' :|= EOF))           = EvalDP (outs :>> ins')
+  EvalDP ((outs :|= EOF) :>> (ins' :|= outs' :|= EOF))         = EvalDP (outs :>> ins')
+  EvalDP ((outs :|= EOF) :>> (ins' :|= EOF))                   = EvalDP (outs :>> ins')
+  EvalDP (ChanOut a :>> (ChanIn a :<+> ins'))                  = 'False
+  EvalDP ((ChanOut a :<+> outs) :>> ChanIn a)                  = 'False
+  EvalDP ((ChanOut a :<+> outs) :>> (ChanIn a' :<+> ins'))     = And (TyEq a a') (EvalDP (outs :>> ins'))
+  EvalDP (ChanOut x :>> ChanIn x')                             = TyEq x x'
+  EvalDP (EOF :>> EOF)                                         = 'True
 
-instance Monad m => HasChannel (ChanOut a :<+> more) m where
-  type Chans (ChanOut a :<+> more) m = Channel a -> Chans more m
-
-instance Monad m => HasChannel (input :|= output) m where
-  type Chans (input :|= output) m = Chans input m -> Chans output m
-
--- class CreateChannels a where
---   type CChans a :: *
--- --  toF :: 
-
--- instance Monad m => CreateChannels (ChanIn a) m where
---   type CChans (ChanIn a) m = Channel a
-
--- instance Monad m => CreateChannels (ChanIn a :<+> more) m where
---   type CChans (ChanIn a :<+> more) m = Channel a -> Chans more m
-
+type family ValidDP (a :: Bool) :: Constraint where
+  ValidDP 'True = ()
+  ValidDP 'False = TypeError
+                        ( 'Text "Invalid Dynamic Pipeline Chain"
+                          ':$$: 'Text "Dynamic Pipeline should match Output Channel Type from previous Stage with Input Channel Types of next Stage."
+                          ':$$: 'Text "Valid Example:"
+                          ':$$: 'Text "`  type InputC       = ChanOut Int :|= EOF`"
+                          ':$$: 'Text "`  type GeneratorC   = ChanIn Int :|= ChanOut Int :|= EOF`"
+                          ':$$: 'Text "`  type OutputC      = ChanIn Int :|= EOF`"
+                          ':$$: 'Text "`  type DP = InputC :>> GeneratorC :>> OutputC`"
+                          ':$$: 'Text "---------------------------------------------------------------------"
+                          ':$$: 'Text "Invalid Example:"
+                          ':$$: 'Text "`  type InputC       = ChanOut String :|= EOF`"
+                          ':$$: 'Text "`  type GeneratorC   = ChanIn Int :|= ChanOut Int :|= EOF`"
+                          ':$$: 'Text "`  type OutputC      = ChanIn Int :|= EOF`"
+                          ':$$: 'Text "`  type DP = InputC :>> GeneratorC :>> OutputC`"
+                        )
 
 -- Defunctionalization
-data ExecF a where
-  ExecF :: HasChannel a m => Proxy a -> Chans a m -> ExecF (Chans a m)
+data Stage a where
+  Stage :: (RequireEOF (EvalTerm a), Monad m) => Proxy a -> Chans a m -> Stage (Chans a m)
+
+mkStage :: forall a m. (RequireEOF (EvalTerm a), Monad m) => Proxy a -> Chans a m -> Stage (Chans a m)
+mkStage = Stage @a @m
+
+mkStage' :: forall a m. (RequireEOF (EvalTerm a), Monad m) => Chans a m -> Stage (Chans a m)
+mkStage' = Stage @a @m (Proxy @a)
 
 class Eval l t | l -> t where
   eval :: l -> t
 
-instance forall a b. (a ~ b) => Eval (ExecF a) b where
-  eval (ExecF _ f) = f
+instance forall a b. (a ~ b) => Eval (Stage a) b where
+  eval (Stage _ f) = f
 
--- Declaration of Channels
-type X = ChanIn Int :<+> ChanIn (Int,Int) :|= ChanOut Int :<+> ChanOut (Int,Int)
+type InputC       = ChanOut Int :|= EOF
+type GeneratorC   = ChanIn Int :<+> ChanIn String :|= ChanOut Int :|= EOF
+type OutputC      = ChanIn Int :|= EOF
 
-myfn :: Maybe Int -> Maybe (Int, Int) -> Channel Int -> Channel (Int, Int) -> IO ()
-myfn a b _ _ = do
-  print a
-  print b
-  return ()
+type DP = InputC :>> GeneratorC :>> OutputC
 
--- Expanded Channels by the compiler asking for the function required according to what the user declare according to X type
---some' :: ExecF (Channel Int -> Channel (Int, Int) -> Channel Int -> Channel (Int, Int) -> IO ())
---some' :: ExecF (Int -> (Int, Int) -> Channel Int -> Channel (Int, Int) -> IO ())
-some' :: ExecF
-  (Maybe Int
-   -> Maybe (Int, Int) -> Channel Int -> Channel (Int, Int) -> IO ())
-some' = ExecF (Proxy @X) myfn
+{-
+ChanOut Int :|= EOF
+:>>
+ChanIn Int :<+> ChanIn String :|= ChanOut Int :|= EOF
 
-x :: IO ()
-x = do 
-  a <- Channel <$> newChan @(Maybe Int)
-  b <- Channel <$> newChan @(Maybe (Int,Int))
-  push' 1 a
-  push' 2 a
-  push' (3,4) b
-  push' (5,6) b
-  a' <- pull' a
-  b' <- pull' b
-  eval some' a' b' a b
+ChanOut Int
+:>>
+ChanIn Int :<+> ChanIn String
+
+-}
+
+type Val = EvalDP DP
+
+something :: (ValidDP (EvalDP a)) => Proxy a -> Int
+something = undefined
+
+x = something (Proxy @DP)
+
+input :: Stage (Channel Int -> IO ())
+input = mkStage' @InputC @IO $ \cout -> forM_ [1..100] (`push'` cout) >> end' cout
+
+gen :: Stage (Maybe Int -> Channel Int -> IO ())
+gen = mkStage' @GeneratorC @IO $ \me cout -> maybe (end' cout) (flip push' cout . (+1)) me
+
+output :: Stage (Maybe Int -> IO ())
+output = mkStage' @OutputC @IO print
+
+prog :: IO ()
+prog = do 
+  outInput <- Channel <$> newChan
+  void $ eval input outInput
+  outGen <- Channel <$> newChan
+  consumeAll outInput $ flip (eval gen) outGen
+  consumeAll outGen $ eval output
+
+consumeAll :: Channel a -> (Maybe a -> IO ()) -> IO ()
+consumeAll c io = do 
+  e <- pull' c
+  io e
+  maybe (pure ()) (const $ consumeAll c io) e
+
+fn :: Int -> String -> Int -> IO ()
+fn a b c = do
+  print a 
+  print b 
+  print c
+
+partiallyapply :: IO ()
+partiallyapply = do 
+  let x = 1 `HCons` "Hello" `HCons` 2 `HCons` HNil
+  hUncurry fn x
+
 
 -- data DP inp gen outp where
 --   DP ::Stage inp inp IO -> Stage gen gen IO -> Stage outp outp IO -> DP inp gen outp
 
-newtype Code inChans outChans (eff :: * -> *) = Code (Proxy inChans -> Proxy outChans -> eff ())
-newtype Stage inChans outChans (eff :: * -> *) = Stage { runStage :: Code inChans outChans eff }
-newtype Filter inChans outChans (eff :: * -> *) = Filter { actors :: [Stage inChans outChans eff]}
+-- newtype Code inChans outChans (eff :: * -> *) = Code (Proxy inChans -> Proxy outChans -> eff ())
+-- newtype Stage inChans outChans (eff :: * -> *) = Stage { runStage :: Code inChans outChans eff }
+-- newtype Filter inChans outChans (eff :: * -> *) = Filter { actors :: [Stage inChans outChans eff]}
 
-type Input = Stage
-type Generator ins outs eff = Filter ins outs eff
-type Output = Stage
+-- type Input = Stage
+-- type Generator ins outs eff = Filter ins outs eff
+-- type Output = Stage
 
-runDp :: Input ins outs IO -> Generator outs outs2 IO -> Output outs2 outs2 IO -> IO ()
-runDp = undefined
+-- runDp :: Input ins outs IO -> Generator outs outs2 IO -> Output outs2 outs2 IO -> IO ()
+-- runDp = undefined
 
-data IC = IC
-  { inChannel1 :: Channel (Int, Int)
-  , inChannel2 :: Channel [Int]
-  }
+-- data IC = IC
+--   { inChannel1 :: Channel (Int, Int)
+--   , inChannel2 :: Channel [Int]
+--   }
 
-data C = C
-  { outChannel1 :: Channel (Int, Int)
-  , outChannel2 :: Channel [Int]
-  }
+-- data C = C
+--   { outChannel1 :: Channel (Int, Int)
+--   , outChannel2 :: Channel [Int]
+--   }
 
-input :: Code IC C IO
-input = Code $ \_ _ -> print "Input"
+-- input :: Code IC C IO
+-- input = Code $ \_ _ -> print "Input"
 
-stageInput :: Stage IC C IO
-stageInput = Stage input
+-- stageInput :: Stage IC C IO
+-- stageInput = Stage input
 
-output :: Code C C IO
-output = Code $ \_ _ -> print "Output"
+-- output :: Code C C IO
+-- output = Code $ \_ _ -> print "Output"
 
-stageOutput :: Stage C C IO
-stageOutput = Stage output
+-- stageOutput :: Stage C C IO
+-- stageOutput = Stage output
 
-stageGenerator :: Generator C C IO
-stageGenerator = filter'
+-- stageGenerator :: Generator C C IO
+-- stageGenerator = filter'
 
-filter' :: Filter C C IO
-filter' = undefined
+-- filter' :: Filter C C IO
+-- filter' = undefined
 
 {-
 λx.x> :t runDp stageInput stageGenerator stageOutput
 runDp stageInput stageGenerator stageOutput :: IO ()
 -}
 
--- {-# INLINE end' #-}
--- end' :: Channel a -> IO ()
--- end' = flip writeChan Nothing . fst
+{-# INLINE end' #-}
+end' :: Channel a -> IO ()
+end' = flip writeChan Nothing . fst . unsafeCoerce
 
 -- {-# INLINE endIn #-}
 -- endIn :: Stage a b f -> IO ()

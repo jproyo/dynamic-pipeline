@@ -16,9 +16,11 @@ conf_forward:
   - -XConstraintKinds
   - -XDataKinds
   - -XDeriveFunctor
+  - -XDeriveFoldable
   - -XDeriveGeneric
   - -XDeriveLift
   - -XDerivingStrategies
+  - -XDeriveTraversable
   - -XDerivingVia
   - -XEmptyCase
   - -XFlexibleContexts
