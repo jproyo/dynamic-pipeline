@@ -34,6 +34,9 @@ infixr 5 :>>
 data ChanIn (a :: Type)
 data ChanOut (a :: Type)
 data EOF
+data Input (a :: Type)
+data Generator (a :: Type)
+data Output (a :: Type)
 
 -- Inductive Type Family
 type family Chans (a :: Type) (m :: Type -> Type) :: Type where
@@ -90,7 +93,7 @@ type family RequireEOF (a :: Bool) :: Constraint where
                           ':$$: 'Text "Example: ChanIn Int :<+> ChanIn String :|= ChanOut Int :<+> ChanOut String :|= EOF"
                         )
                         
-type family TyEq (a :: k) (b :: k2) :: Bool where
+type family TyEq (a :: k) (b :: k) :: Bool where
   TyEq a a = 'True
   TyEq a b = 'False
 
@@ -99,16 +102,17 @@ type family And (a :: Bool) (b :: Bool) :: Bool where
   And x     y     = 'False
 
 type family EvalDP (a :: k) :: Bool where
-  EvalDP (ins :>> gen :>> outs)                                = And (EvalDP (ins :>> gen)) (EvalDP (gen :>> outs))
-  EvalDP ((ins :|= outs :|= EOF) :>> (ins' :|= outs' :|= EOF)) = EvalDP (outs :>> ins')
-  EvalDP ((ins :|= outs :|= EOF) :>> (ins' :|= EOF))           = EvalDP (outs :>> ins')
-  EvalDP ((outs :|= EOF) :>> (ins' :|= outs' :|= EOF))         = EvalDP (outs :>> ins')
-  EvalDP ((outs :|= EOF) :>> (ins' :|= EOF))                   = EvalDP (outs :>> ins')
-  EvalDP (ChanOut a :>> (ChanIn a :<+> ins'))                  = 'False
-  EvalDP ((ChanOut a :<+> outs) :>> ChanIn a)                  = 'False
-  EvalDP ((ChanOut a :<+> outs) :>> (ChanIn a' :<+> ins'))     = And (TyEq a a') (EvalDP (outs :>> ins'))
-  EvalDP (ChanOut x :>> ChanIn x')                             = TyEq x x'
+  EvalDP (Input ins :>> (Generator gen :>> Output outs))       = And (EvalDP (ins :>> gen)) (EvalDP (gen :>> outs))
+  EvalDP ((ChanIn a :<+> more) :>> more')                      = EvalDP (more :>> more')
+  EvalDP ((ChanIn a :|= more) :>> more')                       = EvalDP (more :>> more')
+  EvalDP ((ChanOut a :<+> more) :>> (ChanIn a' :<+> more'))    = And (TyEq a a') (EvalDP (more :>> more'))
+  EvalDP ((ChanOut a :|= more) :>> (ChanIn a' :|= more'))      = And (TyEq a a') (EvalDP (more :>> more'))
   EvalDP (EOF :>> EOF)                                         = 'True
+  EvalDP ((ChanOut a :<+> more) :>> (ChanIn a' :|= more'))     = 'False
+  EvalDP ((ChanOut a :|= more)  :>> (ChanIn a' :<+> more'))    = 'False
+  EvalDP (EOF :>> (ChanOut a :<+> more))                       = 'True
+  EvalDP (EOF :>> (ChanOut a :|= more))                        = 'True
+
 
 type family ValidDP (a :: Bool) :: Constraint where
   ValidDP 'True = ()
@@ -145,23 +149,10 @@ instance forall a b. (a ~ b) => Eval (Stage a) b where
   eval (Stage _ f) = f
 
 type InputC       = ChanOut Int :|= EOF
-type GeneratorC   = ChanIn Int :<+> ChanIn String :|= ChanOut Int :|= EOF
+type GeneratorC   = ChanIn Int :|= ChanOut Int :|= EOF
 type OutputC      = ChanIn Int :|= EOF
 
-type DP = InputC :>> GeneratorC :>> OutputC
-
-{-
-ChanOut Int :|= EOF
-:>>
-ChanIn Int :<+> ChanIn String :|= ChanOut Int :|= EOF
-
-ChanOut Int
-:>>
-ChanIn Int :<+> ChanIn String
-
--}
-
-type Val = EvalDP DP
+type DP = Input InputC :>> Generator GeneratorC :>> Output OutputC
 
 something :: (ValidDP (EvalDP a)) => Proxy a -> Int
 something = undefined
