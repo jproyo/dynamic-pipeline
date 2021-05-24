@@ -13,6 +13,7 @@ import           Relude                                                         
                                                                                                                       )
 import GHC.TypeLits
 import Data.HList
+import System.IO.Unsafe
 
 
 type Edge = (,)
@@ -123,14 +124,40 @@ type family ValidDP (a :: Bool) :: Constraint where
                           ':$$: 'Text "`  type InputC       = ChanOut Int :|= EOF`"
                           ':$$: 'Text "`  type GeneratorC   = ChanIn Int :|= ChanOut Int :|= EOF`"
                           ':$$: 'Text "`  type OutputC      = ChanIn Int :|= EOF`"
-                          ':$$: 'Text "`  type DP = InputC :>> GeneratorC :>> OutputC`"
+                          ':$$: 'Text "`  type DP = Input InputC :>> Generator GeneratorC :>> Output OutputC`"
                           ':$$: 'Text "---------------------------------------------------------------------"
                           ':$$: 'Text "Invalid Example:"
                           ':$$: 'Text "`  type InputC       = ChanOut String :|= EOF`"
                           ':$$: 'Text "`  type GeneratorC   = ChanIn Int :|= ChanOut Int :|= EOF`"
                           ':$$: 'Text "`  type OutputC      = ChanIn Int :|= EOF`"
-                          ':$$: 'Text "`  type DP = InputC :>> GeneratorC :>> OutputC`"
+                          ':$$: 'Text "`  type DP = Input InputC :>> Generator GeneratorC :>> Output OutputC`"
                         )
+
+-- Associated Type Family
+class ChanList (a :: Type) where
+  type HChan a :: [Type]
+  toHList :: Proxy a -> HList (HChan a)
+
+instance ChanList (ChanIn a :|= EOF) where
+  type HChan (ChanIn a :|= EOF) = '[Channel a]
+  toHList _ = let c = unsafePerformIO (Channel @a <$> newChan) 
+               in c `HCons` HNil
+
+instance ChanList (ChanOut a :|= EOF) where
+  type HChan (ChanOut a :|= EOF) = '[Channel a]
+  toHList _ = let c = unsafePerformIO (Channel @a <$> newChan) 
+               in c `HCons` HNil
+
+instance ChanList more => ChanList (ChanIn a :<+> more) where
+  type HChan (ChanIn a :<+> more) = Channel a ': HChan more
+  toHList _ = let c = unsafePerformIO (Channel @a <$> newChan) 
+               in c `HCons` toHList (Proxy @more) 
+
+instance ChanList more => ChanList (ChanOut a :<+> more) where
+  type HChan (ChanOut a :<+> more) = Channel a ': HChan more
+  toHList _ = let c = unsafePerformIO (Channel @a <$> newChan) 
+               in c `HCons` toHList (Proxy @more)
+
 
 -- Defunctionalization
 data Stage a where
@@ -154,10 +181,33 @@ type OutputC      = ChanIn Int :|= EOF
 
 type DP = Input InputC :>> Generator GeneratorC :>> Output OutputC
 
-something :: (ValidDP (EvalDP a)) => Proxy a -> Int
+
+{-
+  (a -> b) -> (b -> c)   ....
+  INPUT   => FILTER1 -> GENERATOR  -> OUTPUT 
+
+do 
+  fdsajflksfjalksdfa  -> x 
+  fjda -> x
+  for 
+    y 
+
+
+    Filter (b, d):
+      actor1 : lee del canal (a,b) -> [a, b, d]
+      actor2 [a, b, d] : lee del canal 2 [a_1, ..., a_n] --- [a, b, d] U [a_1, ..., a_n] ---> canal 2
+
+-}
+
+something :: (ValidDP (EvalDP a)) => Int
 something = undefined
 
-x = something (Proxy @DP)
+x :: Int
+x = something @DP  
+
+a :: (Maybe Int -> Maybe [Char] -> Channel Int -> Channel Text -> IO ()) 
+  -> Stage (Maybe Int -> Maybe [Char] -> Channel Int -> Channel Text -> IO ())
+a = mkStage' @(ChanIn Int :<+> ChanIn String :|= ChanOut Int :<+> ChanOut Text :|= EOF) @IO
 
 input :: Stage (Channel Int -> IO ())
 input = mkStage' @InputC @IO $ \cout -> forM_ [1..100] (`push'` cout) >> end' cout
@@ -167,6 +217,10 @@ gen = mkStage' @GeneratorC @IO $ \me cout -> maybe (end' cout) (flip push' cout 
 
 output :: Stage (Maybe Int -> IO ())
 output = mkStage' @OutputC @IO print
+
+type Actor = Stage
+
+newtype Filter a = Filter { unFilter :: NonEmpty (Actor a)}
 
 prog :: IO ()
 prog = do 
