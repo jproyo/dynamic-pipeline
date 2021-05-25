@@ -134,29 +134,33 @@ type family ValidDP (a :: Bool) :: Constraint where
                         )
 
 -- Associated Type Family
-class ChanList (a :: Type) where
+class MkChans (a :: Type) where
   type HChan a :: [Type]
-  toHList :: Proxy a -> HList (HChan a)
+  mkChans :: Proxy a -> HList (HChan a)
 
-instance ChanList (ChanIn a :|= EOF) where
-  type HChan (ChanIn a :|= EOF) = '[Channel a]
-  toHList _ = let c = unsafePerformIO (Channel @a <$> newChan) 
-               in c `HCons` HNil
+instance MkChans EOF where
+  type HChan EOF = '[]
+  mkChans _ = HNil
 
-instance ChanList (ChanOut a :|= EOF) where
-  type HChan (ChanOut a :|= EOF) = '[Channel a]
-  toHList _ = let c = unsafePerformIO (Channel @a <$> newChan) 
-               in c `HCons` HNil
+instance MkChans more => MkChans (ChanIn a :|= more) where
+  type HChan (ChanIn a :|= more) = Channel a ': HChan more
+  mkChans _ = let c = unsafePerformIO (Channel @a <$> newChan) 
+               in c `HCons` mkChans (Proxy @more)
 
-instance ChanList more => ChanList (ChanIn a :<+> more) where
+instance MkChans more => MkChans (ChanOut a :|= more) where
+  type HChan (ChanOut a :|= more) = Channel a ': HChan more
+  mkChans _ = let c = unsafePerformIO (Channel @a <$> newChan) 
+               in c `HCons` mkChans (Proxy @more) 
+
+instance MkChans more => MkChans (ChanIn a :<+> more) where
   type HChan (ChanIn a :<+> more) = Channel a ': HChan more
-  toHList _ = let c = unsafePerformIO (Channel @a <$> newChan) 
-               in c `HCons` toHList (Proxy @more) 
+  mkChans _ = let c = unsafePerformIO (Channel @a <$> newChan) 
+               in c `HCons` mkChans (Proxy @more) 
 
-instance ChanList more => ChanList (ChanOut a :<+> more) where
+instance MkChans more => MkChans (ChanOut a :<+> more) where
   type HChan (ChanOut a :<+> more) = Channel a ': HChan more
-  toHList _ = let c = unsafePerformIO (Channel @a <$> newChan) 
-               in c `HCons` toHList (Proxy @more)
+  mkChans _ = let c = unsafePerformIO (Channel @a <$> newChan) 
+               in c `HCons` mkChans (Proxy @more)
 
 
 -- Defunctionalization
@@ -205,18 +209,23 @@ something = undefined
 x :: Int
 x = something @DP  
 
-a :: (Maybe Int -> Maybe [Char] -> Channel Int -> Channel Text -> IO ()) 
-  -> Stage (Maybe Int -> Maybe [Char] -> Channel Int -> Channel Text -> IO ())
-a = mkStage' @(ChanIn Int :<+> ChanIn String :|= ChanOut Int :<+> ChanOut Text :|= EOF) @IO
-
 input :: Stage (Channel Int -> IO ())
 input = mkStage' @InputC @IO $ \cout -> forM_ [1..100] (`push'` cout) >> end' cout
+
+chanInput :: HList '[Channel Int]
+chanInput = mkChans (Proxy @InputC)
 
 gen :: Stage (Maybe Int -> Channel Int -> IO ())
 gen = mkStage' @GeneratorC @IO $ \me cout -> maybe (end' cout) (flip push' cout . (+1)) me
 
+chanGen :: HList '[Channel Int, Channel Int]
+chanGen = mkChans (Proxy @GeneratorC)
+
 output :: Stage (Maybe Int -> IO ())
 output = mkStage' @OutputC @IO print
+
+chanOutput :: HList '[Channel Int]
+chanOutput = mkChans (Proxy @OutputC)
 
 type Actor = Stage
 
