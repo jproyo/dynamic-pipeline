@@ -1,6 +1,6 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE UndecidableInstances #-}
-
+{-# OPTIONS_GHC -Wno-unused-foralls #-}
 module DP.Internal where
 
 import Unsafe.Coerce
@@ -35,205 +35,69 @@ infixr 5 :>>
 
 data ChanIn (a :: Type)
 data ChanOut (a :: Type)
+data ChanOutIn (a :: Type) (b :: Type)
+data Channel (a :: Type)
 data EOF
 data Input (a :: Type)
 data Generator (a :: Type)
-data Output (a :: Type)
-
-data StageChan (a :: Type)
-
--- InToGen = ChanOut (x :<+> y :<+> z) :|= ChanIn (x :<+> y :<+> z) :|= EOF
--- GenToOut = ChanOut (x :<+> y :<+> z) :|= ChanIn (x :<+> y :<+> z) :|= EOF
--- DP InToGen :>> GenToOut
-
+data Output
 
 -- Inductive Type Family
-type family Chans (a :: Type) (m :: Type -> Type) :: Type where
-  Chans (a :<+> ChanIn b) m = TypeError
-                                ( 'Text "Cannot use (:<+>) to combine different Channels"
-                                  ':$$: 'Text "in the type '"
-                                  ':<>: 'ShowType (a :<+> ChanIn b)
-                                  ':<>: 'Text "'"
-                                  ':$$: 'Text "Example Correct: ChanOut (Int :<+> String) :|= ChanIn (Int :<+> String) :|= EOF"
-                                )
-  Chans (a :<+> ChanOut b) m = TypeError
-                                ( 'Text "Cannot use (:<+>) to combine different Channels"
-                                  ':$$: 'Text "in the type '"
-                                  ':<>: 'ShowType (a :<+> ChanOut b)
-                                  ':<>: 'Text "'"
-                                  ':$$: 'Text "Example Correct: ChanOut (Int :<+> String) :|= ChanIn (Int :<+> String) :|= EOF"
-                                )
-  Chans (ChanIn (a :<+> ChanIn b)) m = TypeError
-                                        ( 'Text "Channels cannot be nested"
-                                          ':$$: 'Text "in the type '"
-                                          ':<>: 'ShowType (ChanIn (a :<+> ChanIn b))
-                                          ':<>: 'Text "'"
-                                          ':$$: 'Text "Example Correct: ChanOut (Int :<+> String) :|= ChanIn (Int :<+> String) :|= EOF"
-                                        )
-  Chans (ChanIn (a :<+> ChanOut b)) m = TypeError
-                                        ( 'Text "Channels cannot be nested"
-                                          ':$$: 'Text "in the type '"
-                                          ':<>: 'ShowType (a :<+> ChanOut b)
-                                          ':<>: 'Text "'"
-                                          ':$$: 'Text "Example Correct: ChanOut (Int :<+> String) :|= ChanIn (Int :<+> String) :|= EOF"
-                                        )
-  Chans (ChanIn (a :|= ChanIn b)) m = TypeError
-                                        ( 'Text "Channels cannot be nested"
-                                          ':$$: 'Text "in the type '"
-                                          ':<>: 'ShowType (ChanIn (a :|= ChanIn b))
-                                          ':<>: 'Text "'"
-                                          ':$$: 'Text "Example Correct: ChanOut (Int :<+> String) :|= ChanIn (Int :<+> String) :|= EOF"
-                                        )
-  Chans (ChanIn (a :|= ChanOut b)) m = TypeError
-                                        ( 'Text "Channels cannot be nested"
-                                          ':$$: 'Text "in the type '"
-                                          ':<>: 'ShowType (a :|= ChanOut b)
-                                          ':<>: 'Text "'"
-                                          ':$$: 'Text "Example Correct: ChanOut (Int :<+> String) :|= ChanIn (Int :<+> String) :|= EOF"
-                                        )
-  Chans (ChanOut (a :<+> ChanIn b)) m = TypeError
-                                        ( 'Text "Channels cannot be nested"
-                                          ':$$: 'Text "in the type '"
-                                          ':<>: 'ShowType (ChanIn (a :<+> ChanIn b))
-                                          ':<>: 'Text "'"
-                                          ':$$: 'Text "Example Correct: ChanOut (Int :<+> String) :|= ChanIn (Int :<+> String) :|= EOF"
-                                        )
-  Chans (ChanOut (a :<+> ChanOut b)) m = TypeError
-                                        ( 'Text "Channels cannot be nested"
-                                          ':$$: 'Text "in the type '"
-                                          ':<>: 'ShowType (a :<+> ChanOut b)
-                                          ':<>: 'Text "'"
-                                          ':$$: 'Text "Example Correct: ChanOut (Int :<+> String) :|= ChanIn (Int :<+> String) :|= EOF"
-                                        )
-  Chans (ChanOut (a :|= ChanIn b)) m = TypeError
-                                        ( 'Text "Channels cannot be nested"
-                                          ':$$: 'Text "in the type '"
-                                          ':<>: 'ShowType (ChanIn (a :|= ChanIn b))
-                                          ':<>: 'Text "'"
-                                          ':$$: 'Text "Example Correct: ChanOut (Int :<+> String) :|= ChanIn (Int :<+> String) :|= EOF"
-                                        )
-  Chans (ChanOut (a :|= ChanOut b)) m = TypeError
-                                        ( 'Text "Channels cannot be nested"
-                                          ':$$: 'Text "in the type '"
-                                          ':<>: 'ShowType (a :|= ChanOut b)
-                                          ':<>: 'Text "'"
-                                          ':$$: 'Text "Example Correct: ChanOut (Int :<+> String) :|= ChanIn (Int :<+> String) :|= EOF"
-                                        )
-  Chans (ChanIn a :|= ChanIn b) m = TypeError
-                                      ( 'Text "Input Channel cannot be Connected to other Input Channel"
-                                        ':$$: 'Text "in the type '"
-                                        ':<>: 'ShowType (ChanIn a :|= ChanIn b)
-                                        ':<>: 'Text "'"
-                                        ':$$: 'Text "Input must be connected to Output only."
-                                        ':$$: 'Text "Example Correct: ChanOut Int :|= ChanIn Int :|= EOF"
-                                      )
-  Chans (ChanOut a :|= ChanOut b) m = TypeError
-                                      ( 'Text "Output Channel cannot be Connected to other Output Channel"
-                                        ':$$: 'Text "in the type '"
-                                        ':<>: 'ShowType (ChanIn a :|= ChanIn b)
-                                        ':<>: 'Text "'"
-                                        ':$$: 'Text "Output must be connected to EOF only."
-                                        ':$$: 'Text "Example Correct: ChanOut Int :|= ChanIn Int :|= EOF"
-                                      )
-  Chans (ChanIn ins :|= EOF) m = Chans (ChanIn ins) m -> m ()
-  Chans (ChanOut outs :|= _ :|= EOF) m = Chans (ChanOut outs) m -> m ()
-  Chans (ChanIn ins :|= ChanOut outs :|= EOF) m = Chans (ChanIn ins) m -> Chans (ChanOut outs) m -> m ()
-  Chans (ChanOut (a :<+> more)) m = OutChannel a -> Chans (ChanOut more) m
-  Chans (ChanIn (a :<+> more)) m = InChannel a -> Chans (ChanIn more) m
-  Chans (ChanOut a) m = OutChannel a
-  Chans (ChanIn a) m = InChannel a
+type family WithInput (a :: Type) (m :: Type -> Type) :: Type where
+  WithInput (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) m                         
+                                             = WithInput (ChanIn inToGen) m
+  WithInput (ChanIn (a :<+> more)) m         = InChannel a -> WithInput (ChanIn more) m
+  WithInput (ChanIn a) m                     = InChannel a -> m ()
+  WithInput (ChanOutIn (a :<+> more) ins) m  = OutChannel a -> WithInput (ChanOutIn more ins) m
+  WithInput (ChanOutIn a ins) m              = OutChannel a -> WithInput (ChanIn ins) m 
+  WithInput a _                              = TypeError
+                                                  ( 'Text "Wrong Semantic for Building DP Program"
+                                                    ':$$: 'Text "in the type '"
+                                                    ':<>: 'ShowType a
+                                                    ':<>: 'Text "'"
+                                                    ':$$: 'Text "Language Grammar:"
+                                                    ':$$: 'Text "DP    = Input CHANS :>> Generator CHANS :>> Output"
+                                                    ':$$: 'Text "CHANS = Channel CH"
+                                                    ':$$: 'Text "CH    = Type | Type :<+> CH"
+                                                    ':$$: 'Text "Example: 'Input (Channel (Int :<+> Int)) :>> Generator (Channel (Int :<+> Int)) :>> Output'"
+                                                  )
 
--- type family Chans (a :: Type) (m :: Type -> Type) :: Type where
---   Chans EOF m = m ()
---   Chans (ChanOut a) m = OutChannel a
---   Chans (ChanIn a) m = InChannel a
---   Chans (ChanOut a :<+> ChanIn b :|= other) m = TypeError
---                                                   ( 'Text "Cannot combine Input Channel with Output Channel to form a big channel"
---                                                     ':$$: 'Text "in the type '"
---                                                     ':<>: 'ShowType (ChanIn a :<+> ChanOut b)
---                                                     ':<>: 'Text "'"
---                                                     ':$$: 'Text "You can only combine to form a big channel Inputs or Outputs."
---                                                     ':$$: 'Text "Example: ChanIn Int :<+> ChanIn String ... OR ChanOut Int :<+> ChanOut String ..."
---                                                   )
---   Chans (ChanIn a :<+> ChanOut b :|= other) m = TypeError
---                                                   ( 'Text "Cannot combine Input Channel with Output Channel to form a big channel"
---                                                     ':$$: 'Text "in the type '"
---                                                     ':<>: 'ShowType (ChanIn a :<+> ChanOut b)
---                                                     ':<>: 'Text "'"
---                                                     ':$$: 'Text "You can only combine to form a big channel Inputs or Outputs."
---                                                     ':$$: 'Text "Example: ChanIn Int :<+> ChanIn String ... OR ChanOut Int :<+> ChanOut String ..."
---                                                   )
---   Chans (ChanIn a :<+> more) m = InChannel a -> Chans more m
---   Chans (ChanOut a :<+> more) m = OutChannel a -> Chans more m
---   Chans (ChanIn a :|= ChanIn b) m = TypeError
---                                       ( 'Text "Input Channel cannot be Connected to other Input Channel"
---                                         ':$$: 'Text "in the type '"
---                                         ':<>: 'ShowType (ChanIn a :|= ChanIn b)
---                                         ':<>: 'Text "'"
---                                         ':$$: 'Text "Input must be connected to Output only."
---                                         ':$$: 'Text "Example: ChanIn Int :<+> ChanIn String :|= ChanOut Int :<+> ChanOut String"
---                                       )
---   Chans (ChanOut a :|= ChanOut b) m = TypeError
---                                       ( 'Text "Output Channel cannot be Connected to other Output Channel"
---                                         ':$$: 'Text "in the type '"
---                                         ':<>: 'ShowType (ChanIn a :|= ChanIn b)
---                                         ':<>: 'Text "'"
---                                         ':$$: 'Text "Output must be connected to EOF only."
---                                         ':$$: 'Text "Example: ChanOut Int :<+> ChanOut String :|= EOF"
---                                       )
---   Chans (input :|= output) m = Chans input m -> Chans output m
+type family WithGenerator (a :: Type) (m :: Type -> Type) :: Type where
+  WithGenerator (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) m                         
+                                                 = WithGenerator (ChanOutIn inToGen genToOut) m
+  WithGenerator (ChanIn (a :<+> more)) m         = InChannel a -> WithGenerator (ChanIn more) m
+  WithGenerator (ChanIn a) m                     = InChannel a -> m ()
+  WithGenerator (ChanOutIn (a :<+> more) ins) m  = OutChannel a -> WithGenerator (ChanOutIn more ins) m
+  WithGenerator (ChanOutIn a ins) m              = OutChannel a -> WithGenerator (ChanIn ins) m 
+  WithGenerator a _                              = TypeError
+                                                ( 'Text "Wrong Semantic for Building DP Program"
+                                                  ':$$: 'Text "in the type '"
+                                                  ':<>: 'ShowType a
+                                                  ':<>: 'Text "'"
+                                                  ':$$: 'Text "Language Grammar:"
+                                                  ':$$: 'Text "DP    = Input CHANS :>> Generator CHANS :>> Output"
+                                                  ':$$: 'Text "CHANS = Channel CH"
+                                                  ':$$: 'Text "CH    = Type | Type :<+> CH"
+                                                  ':$$: 'Text "Example: 'Input (Channel (Int :<+> Int)) :>> Generator (Channel (Int :<+> Int)) :>> Output'"
+                                                )
 
-type family EvalTerm (a :: Type) :: Bool where
-  EvalTerm (x :|= EOF) = 'True
-  EvalTerm (x :|= y)   = EvalTerm y
-  EvalTerm x           = 'False
+type family WithOutput (a :: Type) (m :: Type -> Type) :: Type where
+  WithOutput (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) m                         
+                                               = WithOutput (ChanOut genToOut) m
+  WithOutput (ChanOut (a :<+> more)) m         = OutChannel a -> WithOutput (ChanOut more) m
+  WithOutput (ChanOut a) m                     = OutChannel a -> m ()
+  WithOutput a _                              = TypeError
+                                                  ( 'Text "Wrong Semantic for Building DP Program"
+                                                    ':$$: 'Text "in the type '"
+                                                    ':<>: 'ShowType a
+                                                    ':<>: 'Text "'"
+                                                    ':$$: 'Text "Language Grammar:"
+                                                    ':$$: 'Text "DP    = Input CHANS :>> Generator CHANS :>> Output"
+                                                    ':$$: 'Text "CHANS = Channel CH"
+                                                    ':$$: 'Text "CH    = Type | Type :<+> CH"
+                                                    ':$$: 'Text "Example: 'Input (Channel (Int :<+> Int)) :>> Generator (Channel (Int :<+> Int)) :>> Output'"
+                                                  )
 
-type family RequireEOF (a :: Bool) :: Constraint where
-  RequireEOF 'True = ()
-  RequireEOF 'False = TypeError
-                        ( 'Text "EOF Termination is Required for building Channel chain"
-                          ':$$: 'Text "Example: ChanIn Int :|= ChanOut String :|= EOF"
-                          ':$$: 'Text "Example: ChanIn Int :<+> ChanIn String :|= ChanOut Int :<+> ChanOut String :|= EOF"
-                        )
-                        
--- type family TyEq (a :: k) (b :: k) :: Bool where
---   TyEq a a = 'True
---   TyEq a b = 'False
-
--- type family And (a :: Bool) (b :: Bool) :: Bool where
---   And 'True 'True = 'True
---   And x     y     = 'False
-
--- type family EvalDP (a :: k) :: Bool where
---   EvalDP (Input ins :>> (Generator gen :>> Output outs))       = And (EvalDP (ins :>> gen)) (EvalDP (gen :>> outs))
---   EvalDP ((ChanIn a :<+> more) :>> more')                      = EvalDP (more :>> more')
---   EvalDP ((ChanIn a :|= more) :>> more')                       = EvalDP (more :>> more')
---   EvalDP ((ChanOut a :<+> more) :>> (ChanIn a' :<+> more'))    = And (TyEq a a') (EvalDP (more :>> more'))
---   EvalDP ((ChanOut a :|= more) :>> (ChanIn a' :|= more'))      = And (TyEq a a') (EvalDP (more :>> more'))
---   EvalDP (EOF :>> EOF)                                         = 'True
---   EvalDP ((ChanOut a :<+> more) :>> (ChanIn a' :|= more'))     = 'False
---   EvalDP ((ChanOut a :|= more)  :>> (ChanIn a' :<+> more'))    = 'False
---   EvalDP (EOF :>> (ChanOut a :<+> more))                       = 'True
---   EvalDP (EOF :>> (ChanOut a :|= more))                        = 'True
-
-
--- type family ValidDP (a :: Bool) :: Constraint where
---   ValidDP 'True = ()
---   ValidDP 'False = TypeError
---                         ( 'Text "Invalid Dynamic Pipeline Chain"
---                           ':$$: 'Text "Dynamic Pipeline should match Output Channel Type from previous Stage with Input Channel Types of next Stage."
---                           ':$$: 'Text "Valid Example:"
---                           ':$$: 'Text "`  type InputC       = ChanOut Int :|= EOF`"
---                           ':$$: 'Text "`  type GeneratorC   = ChanIn Int :|= ChanOut Int :|= EOF`"
---                           ':$$: 'Text "`  type OutputC      = ChanIn Int :|= EOF`"
---                           ':$$: 'Text "`  type DP = Input InputC :>> Generator GeneratorC :>> Output OutputC`"
---                           ':$$: 'Text "---------------------------------------------------------------------"
---                           ':$$: 'Text "Invalid Example:"
---                           ':$$: 'Text "`  type InputC       = ChanOut String :|= EOF`"
---                           ':$$: 'Text "`  type GeneratorC   = ChanIn Int :|= ChanOut Int :|= EOF`"
---                           ':$$: 'Text "`  type OutputC      = ChanIn Int :|= EOF`"
---                           ':$$: 'Text "`  type DP = Input InputC :>> Generator GeneratorC :>> Output OutputC`"
---                         )
 
 -- Associated Type Family
 -- class MkChans (a :: Type) where
@@ -269,25 +133,19 @@ type family RequireEOF (a :: Bool) :: Constraint where
 
 -- Defunctionalization
 data Stage a where
-  Stage :: (RequireEOF (EvalTerm a), Monad m) => Proxy a -> Chans a m -> Stage (Chans a m)
+  Stage :: forall a m (k :: Type -> (Type -> Type) -> Type). Monad m => Proxy a -> Proxy k -> a -> Stage a
 
-mkStage :: forall a m. (RequireEOF (EvalTerm a), Monad m) => Proxy a -> Chans a m -> Stage (Chans a m)
-mkStage = Stage @a @m
+mkStage :: forall a m (k :: Type -> (Type -> Type) -> Type). Monad m => Proxy a -> Proxy k -> a -> Stage a
+mkStage = Stage @a @m @k
 
-mkStage' :: forall a m. (RequireEOF (EvalTerm a), Monad m) => Chans a m -> Stage (Chans a m)
-mkStage' = Stage @a @m (Proxy @a)
+mkStage' :: forall a m (k :: Type -> (Type -> Type) -> Type). Monad m => a -> Stage a
+mkStage' = Stage @a @m (Proxy @a) (Proxy @k)
 
-class Eval l t | l -> t where
+class EvalC l t | l -> t where
   eval :: l -> t
 
-instance forall a b. (a ~ b) => Eval (Stage a) b where
-  eval (Stage _ f) = f
-
--- type InputC       = ChanOut Int :|= EOF
--- type GeneratorC   = ChanIn Int :|= ChanOut Int :|= EOF
--- type OutputC      = ChanIn Int :|= EOF
-
--- type DP = Input InputC :>> Generator GeneratorC :>> Output OutputC
+instance forall a b. (a ~ b) => EvalC (Stage a) b where
+  eval (Stage _ _ f) = f
 
 -- something :: (ValidDP (EvalDP a)) => Int
 -- something = undefined
@@ -295,31 +153,23 @@ instance forall a b. (a ~ b) => Eval (Stage a) b where
 -- x :: Int
 -- x = something @DP  
 
-type InToGenC = ChanOut (Int :<+> Int) :|= ChanIn (Int :<+> Int) :|= EOF
-type GenToOutC = ChanIn (Int :<+> Int) :|= ChanOut (Int :<+> Int) :|= EOF
-type OutputC = ChanIn (Int :<+> Int) :|= EOF
+type DPExample = Input (Channel Int) :>> Generator (Channel Int) :>> Output
 
---input :: (OutChannel Int -> OutChannel Int -> InChannel Int -> InChannel Int -> IO ()) -> Stage (OutChannel Int -> OutChannel Int -> InChannel Int -> InChannel Int -> IO ())
-x = mkStage' @InToGenC @IO 
-
-y = mkStage' @GenToOutC @IO
-
-z = mkStage' @OutputC @IO
-
--- input :: Stage (OutChannel Int -> IO ())
--- input = mkStage' @InputC @IO $ \cout -> forM_ [1..100] (`push'` cout) >> end' cout
+input :: Stage (InChannel Int -> IO ())
+input = mkStage' @(WithInput DPExample IO) @IO $ \cout -> forM_ [1..100] (`push'` cout) >> end' cout
 
 -- chanInput :: HList '[OutChannel Int]
 -- chanInput = mkChans (Proxy @InputC)
 
--- gen :: Stage (InChannel Int -> OutChannel Int -> IO ())
--- gen = mkStage' @GeneratorC @IO $ \cin cout -> consumeAll cin $ maybe (end' cout) (flip push' cout . (+1))
+gen :: Stage (OutChannel Int -> InChannel Int -> IO ())
+gen = mkStage' @(WithGenerator DPExample IO) @IO $ \cin cout -> consumeAll cin $ maybe (end' cout) (flip push' cout . (+1))
 
 -- chanGen :: HList '[InChannel Int, OutChannel Int]
 -- chanGen = mkChans (Proxy @GeneratorC)
 
--- output :: Stage (InChannel Int -> IO ())
--- output = mkStage' @OutputC @IO $ \cin -> consumeAll cin print
+
+output :: Stage (OutChannel Int -> IO ())
+output = mkStage' @(WithOutput DPExample IO)  @IO $ \cin -> consumeAll cin print
 
 -- chanOutput :: HList '[InChannel Int]
 -- chanOutput = mkChans (Proxy @OutputC)
@@ -348,11 +198,11 @@ z = mkStage' @OutputC @IO
 --   consumeAll outInput $ flip (eval gen) outGen
 --   consumeAll outGen $ eval output
 
--- consumeAll :: InChannel a -> (Maybe a -> IO ()) -> IO ()
--- consumeAll c io = do 
---   e <- pull' c
---   io e
---   maybe (pure ()) (const $ consumeAll c io) e
+consumeAll :: OutChannel a -> (Maybe a -> IO ()) -> IO ()
+consumeAll c io = do 
+  e <- pull' c
+  io e
+  maybe (pure ()) (const $ consumeAll c io) e
 
 fn :: Int -> String -> Int -> IO ()
 fn a b c = do
@@ -418,7 +268,7 @@ newChannel :: forall a. (InChan (Maybe a), OutChan (Maybe a))
 newChannel = unsafePerformIO newChan
 
 {-# INLINE end' #-}
-end' :: OutChannel a -> IO ()
+end' :: InChannel a -> IO ()
 end' = flip writeChan Nothing . unsafeCoerce
 
 -- {-# INLINE endIn #-}
@@ -430,7 +280,7 @@ end' = flip writeChan Nothing . unsafeCoerce
 -- endOut = end' . outChannel
 
 {-# INLINE push' #-}
-push' :: a -> OutChannel a -> IO ()
+push' :: a -> InChannel a -> IO ()
 push' e = flip writeChan (Just e) . unsafeCoerce
 
 -- {-# INLINE pushOut #-}
@@ -442,7 +292,7 @@ push' e = flip writeChan (Just e) . unsafeCoerce
 -- pushIn e = push' e . inChannel
 
 {-# INLINE pull' #-}
-pull' :: InChannel a -> IO (Maybe a)
+pull' :: OutChannel a -> IO (Maybe a)
 pull' = readChan (CC.threadDelay 100) . unsafeCoerce
 
 -- {-# INLINE pullIn #-}
