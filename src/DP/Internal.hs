@@ -25,10 +25,6 @@ data chann1 :<+> chann2 = chann1 :<+> chann2
  deriving (Typeable, Eq, Show, Functor, Traversable, Foldable, Bounded)
 infixr 5 :<+>
 
-data a :|= b = a :|= b
-  deriving (Typeable, Eq, Show, Functor, Traversable, Foldable, Bounded)
-infixr 5 :|=
-
 data a :>> b = a :>> b
   deriving (Typeable, Eq, Show, Functor, Traversable, Foldable, Bounded)
 infixr 5 :>>
@@ -37,7 +33,6 @@ data ChanIn (a :: Type)
 data ChanOut (a :: Type)
 data ChanOutIn (a :: Type) (b :: Type)
 data Channel (a :: Type)
-data EOF
 data Input (a :: Type)
 data Generator (a :: Type)
 data Output
@@ -104,10 +99,6 @@ type family WithOutput (a :: Type) (m :: Type -> Type) :: Type where
 --   type HChan a :: [Type]
 --   mkChans :: Proxy a -> HList (HChan a)
 
--- instance MkChans EOF where
---   type HChan EOF = '[]
---   mkChans _ = HNil
-
 -- instance MkChans more => MkChans (ChanIn a :|= more) where
 --   type HChan (ChanIn a :|= more) = InChannel a ': HChan more
 --   mkChans _ = let c = unsafePerformIO (Channel @a <$> newChan) 
@@ -158,19 +149,16 @@ type DPExample = Input (Channel Int) :>> Generator (Channel Int) :>> Output
 input :: Stage (InChannel Int -> IO ())
 input = mkStage' @(WithInput DPExample IO) @IO $ \cout -> forM_ [1..100] (`push'` cout) >> end' cout
 
--- chanInput :: HList '[OutChannel Int]
--- chanInput = mkChans (Proxy @InputC)
-
-gen :: Stage (OutChannel Int -> InChannel Int -> IO ())
-gen = mkStage' @(WithGenerator DPExample IO) @IO $ \cin cout -> consumeAll cin $ maybe (end' cout) (flip push' cout . (+1))
-
--- chanGen :: HList '[InChannel Int, OutChannel Int]
--- chanGen = mkChans (Proxy @GeneratorC)
-
+generator :: Stage (OutChannel Int -> InChannel Int -> IO ())
+generator = mkStage' @(WithGenerator DPExample IO) @IO $ \cin cout -> consumeAll cin $ maybe (end' cout) (flip push' cout . (+1))
 
 output :: Stage (OutChannel Int -> IO ())
 output = mkStage' @(WithOutput DPExample IO)  @IO $ \cin -> consumeAll cin print
 
+-- chanInput :: HList '[OutChannel Int]
+-- chanInput = mkChans (Proxy @InputC)
+-- chanGen :: HList '[InChannel Int, OutChannel Int]
+-- chanGen = mkChans (Proxy @GeneratorC)
 -- chanOutput :: HList '[InChannel Int]
 -- chanOutput = mkChans (Proxy @OutputC)
 
