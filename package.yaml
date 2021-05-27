@@ -65,6 +65,7 @@ dependencies:
   - containers
   - exceptions
   - HList
+  - lens
   - relude >= 1.0.0.0
   - unagi-chan
   - trifecta

@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 1ed7e90f73c3236aa9ad5f167e2f8521bee41f1ec005c5b6958dca376d3e8cf8
+-- hash: 49f54b735ecadbc3be39bafdb6ab40d4489017ccafcf56ce1e7697144e1051ae
 
 name:           dynamic-pipeline
 version:        0.1.0.0
@@ -41,6 +41,7 @@ library
     , bytestring
     , containers
     , exceptions
+    , lens
     , relude >=1.0.0.0
     , trifecta
     , unagi-chan
@@ -70,6 +71,7 @@ test-suite conn-comp-tests
     , dynamic-pipeline
     , exceptions
     , hspec ==2.*
+    , lens
     , relude >=1.0.0.0
     , trifecta
     , unagi-chan

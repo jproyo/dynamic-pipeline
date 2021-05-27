@@ -3,7 +3,6 @@
 {-# OPTIONS_GHC -Wno-unused-foralls #-}
 module DP.Internal where
 
-import Unsafe.Coerce
 import qualified Control.Concurrent            as CC
 import           Control.Concurrent.Chan.Unagi.NoBlocking                                                      hiding ( Stream
                                                                                                                       )
@@ -14,12 +13,17 @@ import           Relude                                                         
 import GHC.TypeLits
 import Data.HList
 import System.IO.Unsafe
+import Control.Lens
 
 
 type Edge = (,)
 
-newtype InChannel a = InChan (Maybe a)
-newtype OutChannel a = OutChan (Maybe a)
+type InChannel a = InChan (Maybe a)
+type OutChannel a = OutChan (Maybe a)
+
+data chann1 :|= chann2 = chann1 :|= chann2
+ deriving (Typeable, Eq, Show, Functor, Traversable, Foldable, Bounded)
+infixr 5 :|=
 
 data chann1 :<+> chann2 = chann1 :<+> chann2
  deriving (Typeable, Eq, Show, Functor, Traversable, Foldable, Bounded)
@@ -37,6 +41,7 @@ data Input (a :: Type)
 data Generator (a :: Type)
 data Output
 
+
 -- Inductive Type Family
 type family WithInput (a :: Type) (m :: Type -> Type) :: Type where
   WithInput (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) m                         
@@ -46,7 +51,7 @@ type family WithInput (a :: Type) (m :: Type -> Type) :: Type where
   WithInput (ChanOutIn (a :<+> more) ins) m  = OutChannel a -> WithInput (ChanOutIn more ins) m
   WithInput (ChanOutIn a ins) m              = OutChannel a -> WithInput (ChanIn ins) m 
   WithInput a _                              = TypeError
-                                                  ( 'Text "Wrong Semantic for Building DP Program"
+                                                  ( 'Text "Invalid Semantic for Building DP Program"
                                                     ':$$: 'Text "in the type '"
                                                     ':<>: 'ShowType a
                                                     ':<>: 'Text "'"
@@ -65,7 +70,7 @@ type family WithGenerator (a :: Type) (m :: Type -> Type) :: Type where
   WithGenerator (ChanOutIn (a :<+> more) ins) m  = OutChannel a -> WithGenerator (ChanOutIn more ins) m
   WithGenerator (ChanOutIn a ins) m              = OutChannel a -> WithGenerator (ChanIn ins) m 
   WithGenerator a _                              = TypeError
-                                                ( 'Text "Wrong Semantic for Building DP Program"
+                                                ( 'Text "Invalid Semantic for Building DP Program"
                                                   ':$$: 'Text "in the type '"
                                                   ':<>: 'ShowType a
                                                   ':<>: 'Text "'"
@@ -82,7 +87,7 @@ type family WithOutput (a :: Type) (m :: Type -> Type) :: Type where
   WithOutput (ChanOut (a :<+> more)) m         = OutChannel a -> WithOutput (ChanOut more) m
   WithOutput (ChanOut a) m                     = OutChannel a -> m ()
   WithOutput a _                              = TypeError
-                                                  ( 'Text "Wrong Semantic for Building DP Program"
+                                                  ( 'Text "Invalid Semantic for Building DP Program"
                                                     ':$$: 'Text "in the type '"
                                                     ':<>: 'ShowType a
                                                     ':<>: 'Text "'"
@@ -93,70 +98,137 @@ type family WithOutput (a :: Type) (m :: Type -> Type) :: Type where
                                                     ':$$: 'Text "Example: 'Input (Channel (Int :<+> Int)) :>> Generator (Channel (Int :<+> Int)) :>> Output'"
                                                   )
 
+-- type family TyEq (a :: k) (b :: k) :: Bool where
+--   TyEq a a = 'True
+--   TyEq a b = 'False
+
+-- type family EvalInput (a :: k) :: Bool where
+--   EvalInput (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output)
+--                                              = EvalInput (ChanIn inToGen)
+--   EvalInput (ChanIn (a :<+> more))           = EvalInput (ChanIn more)
+--   EvalInput (ChanIn a)                       = 'True
+--   EvalInput (ChanOutIn (a :<+> more) ins)    = EvalInput (ChanOutIn more ins)
+--   EvalInput (ChanOutIn a ins)                = EvalInput (ChanIn ins)
+--   EvalInput x                                = 'False
+
+-- type family EvalGenerator (a :: k) :: Bool where
+--   EvalGenerator (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output)
+--                                                  = EvalGenerator (ChanIn inToGen)
+--   EvalGenerator (ChanIn (a :<+> more))           = EvalGenerator (ChanIn more)
+--   EvalGenerator (ChanIn a)                       = 'True
+--   EvalGenerator (ChanOutIn (a :<+> more) ins)    = EvalGenerator (ChanOutIn more ins)
+--   EvalGenerator (ChanOutIn a ins)                = EvalGenerator (ChanIn ins)
+--   EvalGenerator x                                = 'False
+
+-- type family EvalOutput (a :: k) :: Bool where
+--   EvalOutput (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output)
+--                                               = EvalOutput (ChanOut inToGen)
+--   EvalOutput (ChanOut (a :<+> more))          = EvalOutput (ChanOut more)
+--   EvalOutput (ChanOut a)                      = 'True
+--   EvalOutput x                                = 'False
+
+
+type family ValidDP (a :: Bool) :: Constraint where
+  ValidDP 'True = ()
+  ValidDP 'False = TypeError
+                    ( 'Text "Invalid Semantic for Building DP Program"
+                      ':$$: 'Text "Language Grammar:"
+                      ':$$: 'Text "DP    = Input CHANS :>> Generator CHANS :>> Output"
+                      ':$$: 'Text "CHANS = Channel CH"
+                      ':$$: 'Text "CH    = Type | Type :<+> CH"
+                      ':$$: 'Text "Example: 'Input (Channel (Int :<+> Int)) :>> Generator (Channel (Int :<+> Int)) :>> Output'"
+                    )
+
+data EndNode
+data EndStage
+
+data Channels (a :: Type) = Channels 
+  { _cInput :: HList (HChan a)
+  , _cGen   :: HList (HChan a)
+  , _cOut   :: HList (HChan a)
+  }
 
 -- Associated Type Family
--- class MkChans (a :: Type) where
---   type HChan a :: [Type]
---   mkChans :: Proxy a -> HList (HChan a)
+class MkChans (a :: Type) where
+  type HChan a :: [Type]
+  mkChans :: Proxy a -> Record (HChan a) -> Record (HChan a)
 
--- instance MkChans more => MkChans (ChanIn a :|= more) where
---   type HChan (ChanIn a :|= more) = InChannel a ': HChan more
---   mkChans _ = let c = unsafePerformIO (Channel @a <$> newChan) 
---                in c `HCons` mkChans (Proxy @more) 
+instance (MkChans (ChanIn (inToGen :<+> EndNode)), MkChans (ChanOutIn inToGen (genToOut :<+> EndNode)), MkChans (ChanIn (genToOut :<+> EndNode)))
+  => MkChans (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) where
+ 
+  type HChan (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) 
+    = HExtendR
+        (HExtendR
+           (Tagged "input" (HList (HChan (ChanIn (inToGen :<+> EndNode)))))
+           (Tagged "generator" (HList (HChan (ChanOutIn inToGen (genToOut :<+> EndNode)))))
+        )
+        (Tagged "output" (HList (HChan (ChanIn (genToOut :<+> EndNode))))) ': '[]
+    
+  mkChans _ r = let inl  = hLens' (Label :: Label "input")
+                    genl = hLens' (Label :: Label "generator")
+                    outl = hLens' (Label :: Label "output")  
+                  in r & inl .~ mkChans (Proxy @(ChanIn (inToGen :<+> EndNode))) 
+                       & genl .~ mkChans (Proxy @(ChanOutIn inToGen (genToOut :<+> EndNode)))
+                       & outl .~ mkChans (Proxy @(ChanIn (genToOut :<+> EndNode)))
 
--- instance MkChans more => MkChans (ChanOut a :|= more) where
---   type HChan (ChanOut a :|= more) = OutChannel a ': HChan more
---   mkChans _ = let c = unsafePerformIO (Channel @a <$> newChan) 
---                in c `HCons` mkChans (Proxy @more)
+-- instance MkChans (ChanIn more) => MkChans (ChanIn (a :<+> more)) where
+--   type HChan (ChanIn (a :<+> more)) = (InChannel a, OutChannel a) ': HChan (ChanIn more)
+--   mkChans _ = newChannel @a `HCons` mkChans (Proxy @(ChanIn more))
 
+-- instance MkChans (ChanIn EndNode) where
+--   type HChan (ChanIn EndNode) = '[]
+--   mkChans _ = HNil
 
--- instance MkChans more => MkChans (ChanIn a :<+> more) where
---   type HChan (ChanIn a :<+> more) = InChannel a ': HChan more
---   mkChans _ = let c = unsafePerformIO (Channel @a <$> newChan) 
---                in c `HCons` mkChans (Proxy @more) 
-
--- instance MkChans more => MkChans (ChanOut a :<+> more) where
---   type HChan (ChanOut a :<+> more) = OutChannel a ': HChan more
---   mkChans _ = let c = unsafePerformIO (Channel @a <$> newChan) 
---                in c `HCons` mkChans (Proxy @more)
-
---makeChans :: HList '[Channel a] -> (HList 
+-- makeChans :: forall (a :: Type). MkChans a => HList (HChan a)
+-- makeChans = mkChans (Proxy @a)
 
 -- Defunctionalization
 data Stage a where
-  Stage :: forall a m (k :: Type -> (Type -> Type) -> Type). Monad m => Proxy a -> Proxy k -> a -> Stage a
+  Stage :: forall a (k :: Type -> (Type -> Type) -> Type). Proxy a -> Proxy k -> a -> Stage a
 
-mkStage :: forall a m (k :: Type -> (Type -> Type) -> Type). Monad m => Proxy a -> Proxy k -> a -> Stage a
-mkStage = Stage @a @m @k
+mkStage :: forall a (k :: Type -> (Type -> Type) -> Type). Proxy a -> Proxy k -> a -> Stage a
+mkStage = Stage @a @k
 
-mkStage' :: forall a m (k :: Type -> (Type -> Type) -> Type). Monad m => a -> Stage a
-mkStage' = Stage @a @m (Proxy @a) (Proxy @k)
+mkStage' :: forall a (k :: Type -> (Type -> Type) -> Type). a -> Stage a
+mkStage' = Stage @a (Proxy @a) (Proxy @k)
 
 class EvalC l t | l -> t where
   eval :: l -> t
 
 instance forall a b. (a ~ b) => EvalC (Stage a) b where
   eval (Stage _ _ f) = f
+  
+withInput :: forall (a :: Type) (m :: Type -> Type). WithInput a m -> Stage (WithInput a m)
+withInput = mkStage' @(WithInput a m)
 
--- something :: (ValidDP (EvalDP a)) => Int
--- something = undefined
+withGenerator :: forall (a :: Type) (m :: Type -> Type). WithGenerator a m -> Stage (WithGenerator a m)
+withGenerator = mkStage' @(WithGenerator a m)
 
--- x :: Int
--- x = something @DP  
+withOutput :: forall (a :: Type) (m :: Type -> Type). WithOutput a m -> Stage (WithOutput a m)
+withOutput = mkStage' @(WithOutput a m)
+
+
+
+---------------------------------------------------------------------------------------------------
+
 
 type DPExample = Input (Channel Int) :>> Generator (Channel Int) :>> Output
 
 input :: Stage (InChannel Int -> IO ())
-input = mkStage' @(WithInput DPExample IO) @IO $ \cout -> forM_ [1..100] (`push'` cout) >> end' cout
+input = withInput @DPExample @IO $ \cout -> forM_ [1..100] (`push'` cout) >> end' cout
 
 generator :: Stage (OutChannel Int -> InChannel Int -> IO ())
-generator = mkStage' @(WithGenerator DPExample IO) @IO $ \cin cout -> consumeAll cin $ maybe (end' cout) (flip push' cout . (+1))
+generator = mkStage' @(WithGenerator DPExample IO) $ \cin cout -> consumeAll cin $ maybe (end' cout) (flip push' cout . (+1))
 
 output :: Stage (OutChannel Int -> IO ())
-output = mkStage' @(WithOutput DPExample IO)  @IO $ \cin -> consumeAll cin print
+output = mkStage' @(WithOutput DPExample IO) $ \cin -> consumeAll cin print
 
--- chanInput :: HList '[OutChannel Int]
--- chanInput = mkChans (Proxy @InputC)
+chanInput :: HList
+  '[(InChannel Int, OutChannel Int), Proxy (Input EndStage),
+    (InChannel Int, OutChannel Int), Proxy (Generator EndStage),
+    Proxy Output]
+chanInput = makeChans @DPExample
+
 -- chanGen :: HList '[InChannel Int, OutChannel Int]
 -- chanGen = mkChans (Proxy @GeneratorC)
 -- chanOutput :: HList '[InChannel Int]
@@ -252,12 +324,12 @@ runDp stageInput stageGenerator stageOutput :: IO ()
 -}
 
 {-# NOINLINE newChannel #-}
-newChannel :: forall a. (InChan (Maybe a), OutChan (Maybe a))
+newChannel :: forall a. (InChannel a, OutChannel a)
 newChannel = unsafePerformIO newChan
 
 {-# INLINE end' #-}
 end' :: InChannel a -> IO ()
-end' = flip writeChan Nothing . unsafeCoerce
+end' = flip writeChan Nothing
 
 -- {-# INLINE endIn #-}
 -- endIn :: Stage a b f -> IO ()
@@ -269,7 +341,7 @@ end' = flip writeChan Nothing . unsafeCoerce
 
 {-# INLINE push' #-}
 push' :: a -> InChannel a -> IO ()
-push' e = flip writeChan (Just e) . unsafeCoerce
+push' = flip writeChan . Just
 
 -- {-# INLINE pushOut #-}
 -- pushOut :: b -> Stage a b -> IO ()
@@ -281,7 +353,7 @@ push' e = flip writeChan (Just e) . unsafeCoerce
 
 {-# INLINE pull' #-}
 pull' :: OutChannel a -> IO (Maybe a)
-pull' = readChan (CC.threadDelay 100) . unsafeCoerce
+pull' = readChan (CC.threadDelay 100)
 
 -- {-# INLINE pullIn #-}
 -- pullIn :: Stage a b -> IO (Maybe a)
