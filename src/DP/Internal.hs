@@ -12,14 +12,15 @@ import           Relude                                                         
                                                                                                                       )
 import GHC.TypeLits
 import Data.HList
+import Data.HList.Labelable
 import System.IO.Unsafe
 import Control.Lens
 
 
 type Edge = (,)
 
-type InChannel a = InChan (Maybe a)
-type OutChannel a = OutChan (Maybe a)
+newtype WriteChannel a = WriteChannel { unWrite :: InChan (Maybe a) }
+newtype ReadChannel a = ReadChannel { unRead :: OutChan (Maybe a) }
 
 data chann1 :|= chann2 = chann1 :|= chann2
  deriving (Typeable, Eq, Show, Functor, Traversable, Foldable, Bounded)
@@ -46,10 +47,10 @@ data Output
 type family WithInput (a :: Type) (m :: Type -> Type) :: Type where
   WithInput (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) m                         
                                              = WithInput (ChanIn inToGen) m
-  WithInput (ChanIn (a :<+> more)) m         = InChannel a -> WithInput (ChanIn more) m
-  WithInput (ChanIn a) m                     = InChannel a -> m ()
-  WithInput (ChanOutIn (a :<+> more) ins) m  = OutChannel a -> WithInput (ChanOutIn more ins) m
-  WithInput (ChanOutIn a ins) m              = OutChannel a -> WithInput (ChanIn ins) m 
+  WithInput (ChanIn (a :<+> more)) m         = WriteChannel a -> WithInput (ChanIn more) m
+  WithInput (ChanIn a) m                     = WriteChannel a -> m ()
+  WithInput (ChanOutIn (a :<+> more) ins) m  = ReadChannel a -> WithInput (ChanOutIn more ins) m
+  WithInput (ChanOutIn a ins) m              = ReadChannel a -> WithInput (ChanIn ins) m 
   WithInput a _                              = TypeError
                                                   ( 'Text "Invalid Semantic for Building DP Program"
                                                     ':$$: 'Text "in the type '"
@@ -65,10 +66,10 @@ type family WithInput (a :: Type) (m :: Type -> Type) :: Type where
 type family WithGenerator (a :: Type) (m :: Type -> Type) :: Type where
   WithGenerator (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) m                         
                                                  = WithGenerator (ChanOutIn inToGen genToOut) m
-  WithGenerator (ChanIn (a :<+> more)) m         = InChannel a -> WithGenerator (ChanIn more) m
-  WithGenerator (ChanIn a) m                     = InChannel a -> m ()
-  WithGenerator (ChanOutIn (a :<+> more) ins) m  = OutChannel a -> WithGenerator (ChanOutIn more ins) m
-  WithGenerator (ChanOutIn a ins) m              = OutChannel a -> WithGenerator (ChanIn ins) m 
+  WithGenerator (ChanIn (a :<+> more)) m         = WriteChannel a -> WithGenerator (ChanIn more) m
+  WithGenerator (ChanIn a) m                     = WriteChannel a -> m ()
+  WithGenerator (ChanOutIn (a :<+> more) ins) m  = ReadChannel a -> WithGenerator (ChanOutIn more ins) m
+  WithGenerator (ChanOutIn a ins) m              = ReadChannel a -> WithGenerator (ChanIn ins) m 
   WithGenerator a _                              = TypeError
                                                 ( 'Text "Invalid Semantic for Building DP Program"
                                                   ':$$: 'Text "in the type '"
@@ -84,8 +85,8 @@ type family WithGenerator (a :: Type) (m :: Type -> Type) :: Type where
 type family WithOutput (a :: Type) (m :: Type -> Type) :: Type where
   WithOutput (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) m                         
                                                = WithOutput (ChanOut genToOut) m
-  WithOutput (ChanOut (a :<+> more)) m         = OutChannel a -> WithOutput (ChanOut more) m
-  WithOutput (ChanOut a) m                     = OutChannel a -> m ()
+  WithOutput (ChanOut (a :<+> more)) m         = ReadChannel a -> WithOutput (ChanOut more) m
+  WithOutput (ChanOut a) m                     = ReadChannel a -> m ()
   WithOutput a _                              = TypeError
                                                   ( 'Text "Invalid Semantic for Building DP Program"
                                                     ':$$: 'Text "in the type '"
@@ -140,47 +141,145 @@ type family ValidDP (a :: Bool) :: Constraint where
                     )
 
 data EndNode
-data EndStage
+data In (a :: Type)
+data Gen (a :: Type)
+data Out (a :: Type)
 
-data Channels (a :: Type) = Channels 
-  { _cInput :: HList (HChan a)
-  , _cGen   :: HList (HChan a)
-  , _cOut   :: HList (HChan a)
-  }
+inLabel :: Label "input"
+inLabel = Label
+
+genLabel :: Label "generator"
+genLabel = Label
+
+outLabel :: Label "output"
+outLabel = Label
+
+inChLabel :: Label "in-ch"
+inChLabel = Label
+
+outChLabel :: Label "out-ch"
+outChLabel = Label
+
 
 -- Associated Type Family
+class MkCh (a :: Type) where
+  type HChI a :: [Type]
+  type HChO a :: [Type]
+  mkCh :: Proxy a -> (HList (HChI a), HList (HChO a))
+
+instance MkCh (In (ChanIn more)) => MkCh (In (ChanIn (a :<+> more))) where
+  type HChI (In (ChanIn (a :<+> more))) = WriteChannel a ': HChI (In (ChanIn more))
+  type HChO (In (ChanIn (a :<+> more))) = ReadChannel a ': HChO (In (ChanIn more))
+  mkCh _ = let (i, o) = newChannel @a 
+               (il, ol) = mkCh (Proxy @(In (ChanIn more)))
+            in (i `HCons` il, o `HCons` ol)
+
+instance MkCh (Out a) where
+  type HChI (Out a) = '[]
+  type HChO (Out a) = '[]
+  mkCh _ = (HNil, HNil)
+
+instance MkCh (Gen (ChanOutIn fromIn more)) => MkCh (Gen (ChanOutIn fromIn (a :<+> more))) where
+  type HChI (Gen (ChanOutIn fromIn (a :<+> more))) = WriteChannel a ': HChI (Gen (ChanOutIn fromIn more))
+  type HChO (Gen (ChanOutIn fromIn (a :<+> more))) = ReadChannel a ': HChO (Gen (ChanOutIn fromIn more))
+  mkCh _ = let (i, o) = newChannel @a 
+               (il, ol) = mkCh (Proxy @(Gen (ChanOutIn fromIn more)))
+            in (i `HCons` il, o `HCons` ol)
+
+instance MkCh (In (ChanIn EndNode)) where
+  type HChI (In (ChanIn EndNode)) = '[]
+  type HChO (In (ChanIn EndNode)) = '[]
+  mkCh _ = (HNil, HNil) 
+
+instance MkCh (Gen (ChanOutIn fromIn EndNode)) where
+  type HChI (Gen (ChanOutIn fromIn EndNode)) = '[]
+  type HChO (Gen (ChanOutIn fromIn EndNode)) = '[]
+  mkCh _ = (HNil, HNil)
+
 class MkChans (a :: Type) where
   type HChan a :: [Type]
-  mkChans :: Proxy a -> Record (HChan a) -> Record (HChan a)
-
-instance (MkChans (ChanIn (inToGen :<+> EndNode)), MkChans (ChanOutIn inToGen (genToOut :<+> EndNode)), MkChans (ChanIn (genToOut :<+> EndNode)))
-  => MkChans (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) where
+  mkChans :: Proxy a -> Record (HChan a)
+  
+instance ( MkCh (In (ChanIn (inToGen :<+> EndNode)))
+         , MkCh (Gen (ChanOutIn inToGen (genToOut :<+> EndNode)))
+         , MkCh (Out (ChanIn (genToOut :<+> EndNode))))
+    => MkChans (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) where
  
   type HChan (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) 
-    = HExtendR
-        (HExtendR
-           (Tagged "input" (HList (HChan (ChanIn (inToGen :<+> EndNode)))))
-           (Tagged "generator" (HList (HChan (ChanOutIn inToGen (genToOut :<+> EndNode)))))
-        )
-        (Tagged "output" (HList (HChan (ChanIn (genToOut :<+> EndNode))))) ': '[]
+    = '[ Tagged "input" (Record '[ Tagged "in-ch" (HList (HChI (In (ChanIn (inToGen :<+> EndNode)))))
+                                 , Tagged "out-ch" (HList (HChO (In (ChanIn (inToGen :<+> EndNode)))))
+                                 ]
+                        )
+       , Tagged "generator" (Record '[ Tagged "in-ch" (HList (HChI (Gen (ChanOutIn inToGen (genToOut :<+> EndNode)))))
+                                     , Tagged "out-ch" (HList (HChO (Gen (ChanOutIn inToGen (genToOut :<+> EndNode)))))
+                                     ]
+                            )
+       , Tagged "output" (Record '[ Tagged "in-ch" (HList (HChI (Out (ChanIn (genToOut :<+> EndNode)))))])
+       ]
     
-  mkChans _ r = let inl  = hLens' (Label :: Label "input")
-                    genl = hLens' (Label :: Label "generator")
-                    outl = hLens' (Label :: Label "output")  
-                  in r & inl .~ mkChans (Proxy @(ChanIn (inToGen :<+> EndNode))) 
-                       & genl .~ mkChans (Proxy @(ChanOutIn inToGen (genToOut :<+> EndNode)))
-                       & outl .~ mkChans (Proxy @(ChanIn (genToOut :<+> EndNode)))
+  mkChans _ = let (ii, io) = mkCh (Proxy @(In (ChanIn (inToGen :<+> EndNode))))
+                  (gi, go) = mkCh (Proxy @(Gen (ChanOutIn inToGen (genToOut :<+> EndNode))))
+                  (oi, _) = mkCh (Proxy @(Out (ChanIn (genToOut :<+> EndNode))))
+               in (inLabel .=. (inChLabel .=. ii .*. outChLabel .=. io .*. emptyRecord))
+                   .*. 
+                   (genLabel .=. (inChLabel .=. gi .*. outChLabel .=. go .*. emptyRecord))
+                   .*. 
+                   (outLabel .=. (inChLabel .=. oi .*. emptyRecord))
+                   .*.
+                   emptyRecord
 
--- instance MkChans (ChanIn more) => MkChans (ChanIn (a :<+> more)) where
---   type HChan (ChanIn (a :<+> more)) = (InChannel a, OutChannel a) ': HChan (ChanIn more)
---   mkChans _ = newChannel @a `HCons` mkChans (Proxy @(ChanIn more))
+makeChans :: forall (a :: Type). MkChans a => Record (HChan a)
+makeChans = mkChans (Proxy @a)
 
--- instance MkChans (ChanIn EndNode) where
---   type HChan (ChanIn EndNode) = '[]
---   mkChans _ = HNil
+inputChans :: (LabeledOpticF (LabelableTy r1) (Const t1),
+  LabeledOpticP (LabelableTy r1) (->),
+  LabeledOpticTo (LabelableTy r1) "in-ch" (->),
+  LabeledOpticF (LabelableTy r2) (Const t1),
+  LabeledOpticP (LabelableTy r2) (->),
+  LabeledOpticTo (LabelableTy r2) "input" (->),
+  Labelable "in-ch" r1 s t2 t1 t1,
+  Labelable "input" r2 t3 t3 (r1 s) (r1 t2)) =>
+  r2 t3 -> t1
+inputChans ch = let inl  = hLens' inLabel
+                    inch = hLens' inChLabel
+                 in view (inl . inch) ch
 
--- makeChans :: forall (a :: Type). MkChans a => HList (HChan a)
--- makeChans = mkChans (Proxy @a)
+generatorChans :: (LabeledOpticF (LabelableTy r1) (Const (HList l1)),
+  LabeledOpticP (LabelableTy r1) (->),
+  LabeledOpticTo (LabelableTy r1) "out-ch" (->),
+  LabeledOpticF (LabelableTy r2) (Const (HList l2)),
+  LabeledOpticP (LabelableTy r2) (->),
+  LabeledOpticTo (LabelableTy r2) "in-ch" (->),
+  LabeledOpticF (LabelableTy r3) (Const (HList l2)),
+  LabeledOpticP (LabelableTy r3) (->),
+  LabeledOpticTo (LabelableTy r3) "generator" (->),
+  LabeledOpticF (LabelableTy r3) (Const (HList l1)),
+  LabeledOpticTo (LabelableTy r3) "input" (->), HAppendList l1 l2,
+  Labelable "generator" r3 t1 t1 (r2 s1) (r2 t2),
+  Labelable "in-ch" r2 s1 t2 (HList l2) (HList l2),
+  Labelable "input" r3 t1 t1 (r1 s2) (r1 t3),
+  Labelable "out-ch" r1 s2 t3 (HList l1) (HList l1)) =>
+  r3 t1 -> HList (HAppendListR l1 l2)
+generatorChans ch = let inl  = hLens' inLabel
+                        genl  = hLens' genLabel
+                        inch = hLens' inChLabel
+                        outch = hLens' outChLabel
+                        outsIn = view (inl . outch) ch
+                        insGen = view (genl . inch) ch
+                     in outsIn `hAppendList` insGen
+
+outputChans :: (LabeledOpticF (LabelableTy r1) (Const t1),
+  LabeledOpticP (LabelableTy r1) (->),
+  LabeledOpticTo (LabelableTy r1) "out-ch" (->),
+  LabeledOpticF (LabelableTy r2) (Const t1),
+  LabeledOpticP (LabelableTy r2) (->),
+  LabeledOpticTo (LabelableTy r2) "generator" (->),
+  Labelable "generator" r2 t2 t2 (r1 s) (r1 t3),
+  Labelable "out-ch" r1 s t3 t1 t1) =>
+  r2 t2 -> t1
+outputChans ch = let genl  = hLens' genLabel
+                     outch = hLens' outChLabel
+                  in view (genl . outch) ch
 
 -- Defunctionalization
 data Stage a where
@@ -214,25 +313,23 @@ withOutput = mkStage' @(WithOutput a m)
 
 type DPExample = Input (Channel Int) :>> Generator (Channel Int) :>> Output
 
-input :: Stage (InChannel Int -> IO ())
+input :: Stage (WriteChannel Int -> IO ())
 input = withInput @DPExample @IO $ \cout -> forM_ [1..100] (`push'` cout) >> end' cout
 
-generator :: Stage (OutChannel Int -> InChannel Int -> IO ())
+generator :: Stage (ReadChannel Int -> WriteChannel Int -> IO ())
 generator = mkStage' @(WithGenerator DPExample IO) $ \cin cout -> consumeAll cin $ maybe (end' cout) (flip push' cout . (+1))
 
-output :: Stage (OutChannel Int -> IO ())
+output :: Stage (ReadChannel Int -> IO ())
 output = mkStage' @(WithOutput DPExample IO) $ \cin -> consumeAll cin print
 
-chanInput :: HList
-  '[(InChannel Int, OutChannel Int), Proxy (Input EndStage),
-    (InChannel Int, OutChannel Int), Proxy (Generator EndStage),
-    Proxy Output]
-chanInput = makeChans @DPExample
+chanInput :: HList '[WriteChannel Int]
+chanInput = inputChans $ makeChans @DPExample
 
--- chanGen :: HList '[InChannel Int, OutChannel Int]
--- chanGen = mkChans (Proxy @GeneratorC)
--- chanOutput :: HList '[InChannel Int]
--- chanOutput = mkChans (Proxy @OutputC)
+chanGen :: HList '[ReadChannel Int, WriteChannel Int]
+chanGen = generatorChans $ makeChans @DPExample
+
+chanOut :: HList '[ReadChannel Int]
+chanOut = outputChans $ makeChans @DPExample
 
 -- filter :: Filter (NonEmpty (Actor a)) (..... ) 
 -- filter = mkFilter' @FilterC
@@ -241,24 +338,14 @@ chanInput = makeChans @DPExample
 
 -- newtype Filter a = Filter { unFilter :: NonEmpty (Actor a)}
 
--- prog' :: IO ()
--- prog' = do 
---   let cIns = chanInput
---   let cGen = chanGen
---   void $ hUncurry (eval input) cIns
---   outGen <- Channel <$> newChan
---   consumeAll cIns $ hUncurry (flip (eval gen) cGen)
---   consumeAll outGen $ eval output
+prog' :: IO ()
+prog' = do 
+  let cIns = chanInput
+  let cGen = chanGen
+  let cOut = chanOut
+  hUncurry (eval input) cIns >> hUncurry (eval generator) cGen >> hUncurry (eval output) cOut
 
--- prog :: IO ()
--- prog = do
---   outInput <- Channel <$> newChan
---   void $ eval input outInput
---   outGen <- Channel <$> newChan
---   consumeAll outInput $ flip (eval gen) outGen
---   consumeAll outGen $ eval output
-
-consumeAll :: OutChannel a -> (Maybe a -> IO ()) -> IO ()
+consumeAll :: ReadChannel a -> (Maybe a -> IO ()) -> IO ()
 consumeAll c io = do 
   e <- pull' c
   io e
@@ -291,8 +378,8 @@ partiallyapply = do
 -- runDp = undefined
 
 -- data IC = IC
---   { inChannel1 :: Channel (Int, Int)
---   , inChannel2 :: Channel [Int]
+--   { WriteChannel1 :: Channel (Int, Int)
+--   , WriteChannel2 :: Channel [Int]
 --   }
 
 -- data C = C
@@ -324,12 +411,12 @@ runDp stageInput stageGenerator stageOutput :: IO ()
 -}
 
 {-# NOINLINE newChannel #-}
-newChannel :: forall a. (InChannel a, OutChannel a)
-newChannel = unsafePerformIO newChan
+newChannel :: forall a. (WriteChannel a, ReadChannel a)
+newChannel = bimap WriteChannel ReadChannel $ unsafePerformIO newChan
 
 {-# INLINE end' #-}
-end' :: InChannel a -> IO ()
-end' = flip writeChan Nothing
+end' :: WriteChannel a -> IO ()
+end' = flip writeChan Nothing . unWrite
 
 -- {-# INLINE endIn #-}
 -- endIn :: Stage a b f -> IO ()
@@ -340,8 +427,8 @@ end' = flip writeChan Nothing
 -- endOut = end' . outChannel
 
 {-# INLINE push' #-}
-push' :: a -> InChannel a -> IO ()
-push' = flip writeChan . Just
+push' :: a -> WriteChannel a -> IO ()
+push' a c = writeChan (unWrite c) (Just a) 
 
 -- {-# INLINE pushOut #-}
 -- pushOut :: b -> Stage a b -> IO ()
@@ -352,8 +439,8 @@ push' = flip writeChan . Just
 -- pushIn e = push' e . inChannel
 
 {-# INLINE pull' #-}
-pull' :: OutChannel a -> IO (Maybe a)
-pull' = readChan (CC.threadDelay 100)
+pull' :: ReadChannel a -> IO (Maybe a)
+pull' = readChan (CC.threadDelay 100) . unRead
 
 -- {-# INLINE pullIn #-}
 -- pullIn :: Stage a b -> IO (Maybe a)
