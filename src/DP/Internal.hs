@@ -6,8 +6,8 @@ module DP.Internal where
 
 import qualified Control.Concurrent            as CC
 import Control.Concurrent.Async
-import           Control.Concurrent.Chan.Unagi.NoBlocking                                                      
-import           Relude 
+import Control.Concurrent.Chan.Unagi.NoBlocking                                                      
+import Relude as R
 import GHC.TypeLits
 import Data.HList
 import Data.HList.Labelable
@@ -16,9 +16,6 @@ import Control.Lens
 
 newtype WriteChannel a = WriteChannel { unWrite :: InChan (Maybe a) }
 newtype ReadChannel a = ReadChannel { unRead :: OutChan (Maybe a) }
-
--- data Channel a = WR WriteChannel a 
---                | RC ReadChannel a
 
 data chann1 :<+> chann2 = chann1 :<+> chann2
  deriving (Typeable, Eq, Show, Functor, Traversable, Foldable, Bounded)
@@ -36,7 +33,6 @@ data Channel (a :: Type)
 data Input (a :: Type)
 data Generator (a :: Type)
 data Output
-
 
 -- Inductive Type Family
 type family WithInput (a :: Type) (m :: Type -> Type) :: Type where
@@ -177,6 +173,15 @@ instance MkCh (Gen (ChanOutIn fromIn EndNode)) where
   type HChO (Gen (ChanOutIn fromIn EndNode)) = '[]
   mkCh _ = (HNil, HNil)
 
+type family ExpandInputToCh (a :: Type) :: [Type] where
+  ExpandInputToCh (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) = HChI (In (ChanIn (inToGen :<+> EndNode)))
+
+type family ExpandGenToCh (a :: Type) :: [Type] where
+  ExpandGenToCh (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) = HAppendListR (HChO (In (ChanIn (inToGen :<+> EndNode)))) 
+                                                                                                     (HChI (Gen (ChanOutIn inToGen (genToOut :<+> EndNode))))
+type family ExpandOutputToCh (a :: Type) :: [Type] where
+  ExpandOutputToCh (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) = HChO (Gen (ChanOutIn inToGen (genToOut :<+> EndNode)))
+
 class MkChans (a :: Type) where
   type HChan a :: [Type]
   mkChans :: Proxy a -> Record (HChan a)
@@ -226,6 +231,7 @@ inputChans = let inl  = hLens' inLabel
                  inch = hLens' inChLabel
               in view (inl . inch)
 
+
 type GeneratorChansConstraint r1 l1 r2 l2 r3 l3 t1 s1 t2 s2 t3 = ( LabeledOpticF (LabelableTy r1) (Const (HList l1))
                                                                  , LabeledOpticP (LabelableTy r1) (->)
                                                                  , LabeledOpticTo (LabelableTy r1) "out-ch" (->)
@@ -265,6 +271,34 @@ outputChans = let genl  = hLens' genLabel
                   outch = hLens' outChLabel
                in view (genl . outch)
 
+
+type AllChans r2 r3 l1 r4 l2 t2 s t1 s2 t5 l3 l4 = (LabeledOpticTo (LabelableTy r2) "in-ch" (->),
+            LabeledOpticF (LabelableTy r3) (Const (HList l3)),
+            LabeledOpticP (LabelableTy r3) (->),
+            LabeledOpticTo (LabelableTy r3) "input" (->),
+            LabeledOpticF (LabelableTy r2) (Const (HList l1)),
+            LabeledOpticP (LabelableTy r2) (->),
+            LabeledOpticTo (LabelableTy r2) "out-ch" (->),
+            LabeledOpticTo (LabelableTy r4) "in-ch" (->),
+            LabeledOpticF (LabelableTy r3) (Const (HList l2)),
+            LabeledOpticTo (LabelableTy r3) "generator" (->),
+            LabeledOpticF (LabelableTy r3) (Const (HList l1)),
+            LabeledOpticF (LabelableTy r2) (Const (HList l3)),
+            LabeledOpticF (LabelableTy r4) (Const (HList l4)),
+            LabeledOpticP (LabelableTy r4) (->),
+            LabeledOpticTo (LabelableTy r4) "out-ch" (->),
+            LabeledOpticF (LabelableTy r3) (Const (HList l4)),
+            LabeledOpticF (LabelableTy r4) (Const (HList l2)),
+            HAppendList l1 l2, Labelable "generator" r3 t2 t2 (r4 s) (r4 t1),
+            Labelable "in-ch" r2 s2 t5 (HList l3) (HList l3),
+            Labelable "in-ch" r4 s t1 (HList l2) (HList l2),
+            Labelable "input" r3 t2 t2 (r2 s2) (r2 t5),
+            Labelable "out-ch" r2 s2 t5 (HList l1) (HList l1),
+            Labelable "out-ch" r4 s t1 (HList l4) (HList l4))
+
+inGenOut :: AllChans r2 r3 l1 r4 l2 t2 s t1 s2 t5 l3 l4 => r3 t2 -> (HList l3, HList (HAppendListR l1 l2), HList l4)
+inGenOut ch = (inputChans ch, generatorChans ch, outputChans ch)
+
 -- Defunctionalization
 data Stage a where
   Stage :: Proxy a -> a -> Stage a
@@ -283,7 +317,11 @@ instance forall a b. (a ~ b) => EvalC (Stage a) b where
 
 runStage :: forall (n :: HNat) f (xs :: [*]) r. (HCurry' n f xs r, ArityFwd f n, ArityRev f n) => f -> HList xs -> r
 runStage = hUncurry
-  
+
+runStage' :: HCurry' n f xs r => Proxy n -> f -> HList xs -> r
+runStage' = hUncurry'
+
+
 withInput :: forall (a :: Type) (m :: Type -> Type). WithInput a m -> Stage (WithInput a m)
 withInput = mkStage' @(WithInput a m)
 
@@ -299,18 +337,23 @@ data DynamicPipeline a = DynamicPipeline
   , onOutput :: Stage (WithOutput a IO)
   }
 
--- runDP :: forall a r1 t1 r2 s t2 t3 l1 l2 l3 s1. 
---                                   ( MkChans a
---                                   , Record (HChan a) ~ r2 t3
---                                   , InputChansConstraint r1 t1 r2 s t2 t3)
---                                   --, GeneratorChansConstraint r1 l1 r2 l2 r2 l3 t3 s t2 s1 t3) 
---                                   => DynamicPipeline a -> IO ()
--- runDP ab = do
---   let cIns = inputChans $ makeChans @a
---   --let cGen = generatorChans $ makeChans @a
---   -- let cOut = outputChans $ makeChans @a
---   -- return ()
---   hUncurry (eval $ onInput @a) cIns -- >> hUncurry (eval onGenerator) cGen >> hUncurry (eval onOutput) cOut
+runDP :: forall a r2 r3 l1 r4 l2 t2 s t1 s2 t5 l3 l4. 
+                                  ( MkChans a
+                                  , Record (HChan a) ~ r3 t2
+                                  , ArityRev (WithInput a IO) (HLength (ExpandInputToCh a))
+                                  , ArityFwd (WithInput a IO) (HLength (ExpandInputToCh a))
+                                  , HCurry' (HLength (ExpandInputToCh a)) (WithInput a IO) l3 (IO ())
+                                  , ArityRev (WithGenerator a IO) (HLength (ExpandGenToCh a))
+                                  , ArityFwd (WithGenerator a IO) (HLength (ExpandGenToCh a))
+                                  , HCurry' (HLength (ExpandGenToCh a)) (WithGenerator a IO) (HAppendListR l1 l2) (IO ())
+                                  , ArityRev (WithOutput a IO) (HLength (ExpandOutputToCh a))
+                                  , ArityFwd (WithOutput a IO) (HLength (ExpandOutputToCh a))
+                                  , HCurry' (HLength (ExpandOutputToCh a)) (WithOutput a IO) l4 (IO ())
+                                  , AllChans r2 r3 l1 r4 l2 t2 s t1 s2 t5 l3 l4)
+                                  => DynamicPipeline a -> IO ()
+runDP DynamicPipeline{..} = do
+  let (cIns, cGen, cOut) = inGenOut $ makeChans @a
+  runStage (run onInput) cIns >> runStage (run onGenerator) cGen >> runStage (run onOutput) cOut
 
 mkDP :: forall a. Stage (WithInput a IO) -> Stage (WithGenerator a IO) -> Stage (WithOutput a IO) -> DynamicPipeline a
 mkDP = DynamicPipeline @a
@@ -369,6 +412,22 @@ chanOut = outputChans $ makeChans @DPExample
 
 -- newtype Filter a = Filter { unFilter :: NonEmpty (Actor a)}
 
+-- data Param = forall a. Show a => Param a
+
+-- elimParam :: (forall a. a -> r) -> Param -> r
+-- elimParam f (Param a) = f a 
+
+-- instance S.Show Param where
+--   show (Param s) = R.show s
+
+-- fn :: Param -> Param -> Param -> IO ()
+-- fn a b c = print a >> print b >> print c
+
+-- p' :: IO ()
+-- p' = do 
+--   let p = Param 1 `HCons` Param "Hello" `HCons` Param 2.0 `HCons` HNil
+--   hUncurry fn p
+
 {-# INLINE forall #-}
 forall :: ReadChannel a -> (Maybe a -> IO ()) -> IO ()
 forall c io = do 
@@ -392,6 +451,7 @@ push a c = writeChan (unWrite c) (Just a)
 {-# INLINE pull #-}
 pull :: ReadChannel a -> IO (Maybe a)
 pull = readChan (CC.threadDelay 100) . unRead
+
 
 -- {-# INLINE foldrS #-}
 -- foldrS :: (Stage a b -> a -> IO (Stage a b)) -> Stage a b -> IO (Stage a b)
