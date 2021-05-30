@@ -9,10 +9,11 @@ import Control.Concurrent.Async
 import Control.Concurrent.Chan.Unagi.NoBlocking                                                      
 import Relude as R
 import GHC.TypeLits
+import Data.List.NonEmpty
 import Data.HList
 import Data.HList.Labelable
 import System.IO.Unsafe
-import Control.Lens
+import Control.Lens hiding ((<|))
 
 newtype WriteChannel a = WriteChannel { unWrite :: InChan (Maybe a) }
 newtype ReadChannel a = ReadChannel { unRead :: OutChan (Maybe a) }
@@ -33,6 +34,34 @@ data Channel (a :: Type)
 data Input (a :: Type)
 data Generator (a :: Type)
 data Output
+
+
+type family And (a :: Bool) (b :: Bool) :: Bool where
+  And 'True 'True = 'True
+  And a b         = 'False
+
+type family IsDP (a :: k) :: Bool where
+  IsDP (Input (Channel inToGen)
+        :>> Generator (Channel genToOut)
+        :>> Output)
+                                            = And (IsDP (Input (Channel inToGen))) (IsDP (Generator (Channel genToOut)))
+  IsDP (Input (Channel (a :<+> more)))      = IsDP (Input (Channel more))
+  IsDP (Input (Channel a))                  = 'True
+  IsDP (Generator (Channel (a :<+> more)))  = IsDP (Generator (Channel more))
+  IsDP (Generator (Channel a))              = 'True
+  IsDP x                                    = 'False
+
+
+type family ValidDP (a :: Bool) :: Constraint where
+  ValidDP 'True = ()
+  ValidDP 'False = TypeError
+                    ( 'Text "Invalid Semantic for Building DP Program"
+                      ':$$: 'Text "Language Grammar:"
+                      ':$$: 'Text "DP    = Input CHANS :>> Generator CHANS :>> Output"
+                      ':$$: 'Text "CHANS = Channel CH"
+                      ':$$: 'Text "CH    = Type | Type :<+> CH"
+                      ':$$: 'Text "Example: 'Input (Channel (Int :<+> Int)) :>> Generator (Channel (Int :<+> Int)) :>> Output'"
+                    )
 
 -- Inductive Type Family
 type family WithInput (a :: Type) (m :: Type -> Type) :: Type where
@@ -292,6 +321,29 @@ runStage = hUncurry
 runStage' :: HCurry' n f xs r => Proxy n -> f -> HList xs -> r
 runStage' = hUncurry'
 
+newtype Actor s m a = Actor {  unActor :: MonadState s m => m () }
+
+newtype Filter s m a = Filter { unFilter :: NonEmpty (Actor s m a) }
+  deriving Generic
+
+instance Wrapped (Filter s m a)
+
+actor :: forall s m a. m () -> Filter s m a
+actor = Filter . actor'
+
+actor' :: forall s m a. m () -> NonEmpty (Actor s m a)
+actor' = one . Actor
+
+(|>>) :: forall s m a. m () -> Filter s m a -> Filter s m a
+(|>>) a f = f & _Wrapped' %~ (\p -> Actor a <| p)
+infixr 5 |>>
+
+--runFilter :: forall s m a. Filter s m a -> s -> m ()
+runFilter :: forall k (m :: * -> *) s (a :: k). Monad m => Filter s (StateT s m) a -> s -> m ()
+runFilter f s = flip evalStateT s . mapM_ unActor . unFilter $ f
+
+b :: (MonadIO m, MonadState Int m) => Filter Int m a
+b = (modify (+2) >> get >>= print . mappend "Hello: " . show) |>> actor (get >>= print . mappend "Hello 2: " . show)
 
 withInput :: forall (a :: Type) (m :: Type -> Type). WithInput a m -> Stage (WithInput a m)
 withInput = mkStage' @(WithInput a m)
@@ -302,10 +354,10 @@ withGenerator = mkStage' @(WithGenerator a m)
 withOutput :: forall (a :: Type) (m :: Type -> Type). WithOutput a m -> Stage (WithOutput a m)
 withOutput = mkStage' @(WithOutput a m)
 
-data DynamicPipeline a = DynamicPipeline 
-  { onInput :: Stage (WithInput a IO)
+data DynamicPipeline a = ValidDP (IsDP a) => DynamicPipeline 
+  { onInput     :: Stage (WithInput a IO)
   , onGenerator :: Stage (WithGenerator a IO)
-  , onOutput :: Stage (WithOutput a IO)
+  , onOutput    :: Stage (WithOutput a IO)
   }
 
 runDP :: forall a r2 r3 l1 r4 l2 t2 s t1 s2 t5 l3 l4. 
@@ -326,32 +378,8 @@ runDP DynamicPipeline{..} = do
   let (cIns, cGen, cOut) = inGenOut $ makeChans @a
   async (runStage (run onInput) cIns) >> async (runStage (run onGenerator) cGen) >> async (runStage (run onOutput) cOut) >>= wait
 
-mkDP :: forall a. Stage (WithInput a IO) -> Stage (WithGenerator a IO) -> Stage (WithOutput a IO) -> DynamicPipeline a
+mkDP :: forall a. ValidDP (IsDP a) => Stage (WithInput a IO) -> Stage (WithGenerator a IO) -> Stage (WithOutput a IO) -> DynamicPipeline a
 mkDP = DynamicPipeline @a
-
----------------------------------------------------------------------------------------------------
-
-type DPExample = Input (Channel Int) :>> Generator (Channel Int) :>> Output
-
-input :: Stage (WriteChannel Int -> IO ())
-input = withInput @DPExample @IO $ \cout -> forM_ [1..100] (`push` cout) >> end cout
-
-generator :: Stage (ReadChannel Int -> WriteChannel Int -> IO ())
-generator = withGenerator @DPExample @IO $ \cin cout -> forall cin $ maybe (end cout) (flip push cout . (+1))
-
-output :: Stage (ReadChannel Int -> IO ())
-output = withOutput @DPExample @IO $ \cin -> forall cin print
-
-program :: IO ()
-program = runDP $ mkDP @DPExample input generator output
-
--- filter :: Filter (NonEmpty (Actor a)) (..... ) 
--- filter = mkFilter' @FilterC
-
--- type Actor = MonadState s m => Chans a -> m ()
-
--- newtype Filter a = Filter { unFilter :: NonEmpty (Actor a)}
-
 {-# INLINE forall #-}
 forall :: ReadChannel a -> (Maybe a -> IO ()) -> IO ()
 forall c io = do 
@@ -429,3 +457,21 @@ pull = readChan (CC.threadDelay 100) . unRead
 -- fromText :: Text -> IO (Stage ByteString b)
 -- fromText bs = newStage (async $ pure ()) >>= \s ->
 --   R.mapM_ (`pushIn` s) (R.map R.encodeUtf8 $ R.lines bs) >> endIn s >> return s
+
+---------------------------------------------------------------------------------------------------
+
+type DPExample = Input (Channel Int) :>> Generator (Channel Int) :>> Output
+
+input :: Stage (WriteChannel Int -> IO ())
+input = withInput @DPExample @IO $ \cout -> forM_ [1..100] (`push` cout) >> end cout
+
+generator :: Stage (ReadChannel Int -> WriteChannel Int -> IO ())
+generator = withGenerator @DPExample @IO $ \cin cout -> forall cin $ maybe (end cout) (flip push cout . (+1))
+
+output :: Stage (ReadChannel Int -> IO ())
+output = withOutput @DPExample @IO $ \cin -> forall cin print
+
+program :: IO ()
+program = runDP $ mkDP @DPExample input generator output
+
+
