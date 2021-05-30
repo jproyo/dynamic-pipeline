@@ -90,33 +90,6 @@ type family WithOutput (a :: Type) (m :: Type -> Type) :: Type where
                                                     ':$$: 'Text "Example: 'Input (Channel (Int :<+> Int)) :>> Generator (Channel (Int :<+> Int)) :>> Output'"
                                                   )
 
-type family And (a :: Bool) (b :: Bool) :: Bool where
-  And 'True 'True = 'True
-  And a b         = 'False
-
-type family IsDP (a :: k) :: Bool where
-  IsDP (Input (Channel inToGen) 
-        :>> Generator (Channel genToOut) 
-        :>> Output)
-                                            = And (IsDP (Input (Channel inToGen))) (IsDP (Generator (Channel genToOut)))
-  IsDP (Input (Channel (a :<+> more)))      = IsDP (Input (Channel more))
-  IsDP (Input (Channel a))                  = 'True
-  IsDP (Generator (Channel (a :<+> more)))  = IsDP (Generator (Channel more))
-  IsDP (Generator (Channel a))              = 'True
-  IsDP x                                    = 'False
-
-
-type family ValidDP (a :: Bool) :: Constraint where
-  ValidDP 'True = ()
-  ValidDP 'False = TypeError
-                    ( 'Text "Invalid Semantic for Building DP Program"
-                      ':$$: 'Text "Language Grammar:"
-                      ':$$: 'Text "DP    = Input CHANS :>> Generator CHANS :>> Output"
-                      ':$$: 'Text "CHANS = Channel CH"
-                      ':$$: 'Text "CH    = Type | Type :<+> CH"
-                      ':$$: 'Text "Example: 'Input (Channel (Int :<+> Int)) :>> Generator (Channel (Int :<+> Int)) :>> Output'"
-                    )
-
 -- Type encoding for Building Chans. Only for internal use in the Associated Type Family and combinators of MkCh and MkChans
 data EndNode
 data In (a :: Type)
@@ -217,39 +190,37 @@ instance ( MkCh (In (ChanIn (inToGen :<+> EndNode)))
 makeChans :: forall (a :: Type). MkChans a => Record (HChan a)
 makeChans = mkChans (Proxy @a)
 
-type InputChansConstraint r1 t1 r2 s t2 t3 = ( LabeledOpticF (LabelableTy r1) (Const t1)
-                                             , LabeledOpticP (LabelableTy r1) (->)
-                                             , LabeledOpticTo (LabelableTy r1) "in-ch" (->)
-                                             , LabeledOpticF (LabelableTy r2) (Const t1)
-                                             , LabeledOpticP (LabelableTy r2) (->)
-                                             , LabeledOpticTo (LabelableTy r2) "input" (->)
-                                             , Labelable "in-ch" r1 s t2 t1 t1
-                                             , Labelable "input" r2 t3 t3 (r1 s) (r1 t2))
-
-inputChans :: InputChansConstraint r1 t1 r2 s t2 t3 => r2 t3 -> t1
+inputChans :: ( LabeledOpticF (LabelableTy r1) (Const t1)
+              , LabeledOpticP (LabelableTy r1) (->)
+              , LabeledOpticTo (LabelableTy r1) "in-ch" (->)
+              , LabeledOpticF (LabelableTy r2) (Const t1)
+              , LabeledOpticP (LabelableTy r2) (->)
+              , LabeledOpticTo (LabelableTy r2) "input" (->)
+              , Labelable "in-ch" r1 s t2 t1 t1
+              , Labelable "input" r2 t3 t3 (r1 s) (r1 t2)) 
+           => r2 t3 -> t1
 inputChans = let inl  = hLens' inLabel
                  inch = hLens' inChLabel
               in view (inl . inch)
 
 
-type GeneratorChansConstraint r1 l1 r2 l2 r3 l3 t1 s1 t2 s2 t3 = ( LabeledOpticF (LabelableTy r1) (Const (HList l1))
-                                                                 , LabeledOpticP (LabelableTy r1) (->)
-                                                                 , LabeledOpticTo (LabelableTy r1) "out-ch" (->)
-                                                                 , LabeledOpticF (LabelableTy r2) (Const (HList l2))
-                                                                 , LabeledOpticP (LabelableTy r2) (->)
-                                                                 , LabeledOpticTo (LabelableTy r2) "in-ch" (->)
-                                                                 , LabeledOpticF (LabelableTy r3) (Const (HList l2))
-                                                                 , LabeledOpticP (LabelableTy r3) (->)
-                                                                 , LabeledOpticTo (LabelableTy r3) "generator" (->)
-                                                                 , LabeledOpticF (LabelableTy r3) (Const (HList l1))
-                                                                 , LabeledOpticTo (LabelableTy r3) "input" (->)
-                                                                 , HAppendList l1 l2
-                                                                 , Labelable "generator" r3 t1 t1 (r2 s1) (r2 t2)
-                                                                 , Labelable "in-ch" r2 s1 t2 (HList l2) (HList l2)
-                                                                 , Labelable "input" r3 t1 t1 (r1 s2) (r1 t3)
-                                                                 , Labelable "out-ch" r1 s2 t3 (HList l1) (HList l1))
-
-generatorChans :: GeneratorChansConstraint r1 l1 r2 l2 r3 l3 t1 s1 t2 s2 t3 => r3 t1 -> HList (HAppendListR l1 l2)
+generatorChans :: ( LabeledOpticF (LabelableTy r1) (Const (HList l1))
+                  , LabeledOpticP (LabelableTy r1) (->)
+                  , LabeledOpticTo (LabelableTy r1) "out-ch" (->)
+                  , LabeledOpticF (LabelableTy r2) (Const (HList l2))
+                  , LabeledOpticP (LabelableTy r2) (->)
+                  , LabeledOpticTo (LabelableTy r2) "in-ch" (->)
+                  , LabeledOpticF (LabelableTy r3) (Const (HList l2))
+                  , LabeledOpticP (LabelableTy r3) (->)
+                  , LabeledOpticTo (LabelableTy r3) "generator" (->)
+                  , LabeledOpticF (LabelableTy r3) (Const (HList l1))
+                  , LabeledOpticTo (LabelableTy r3) "input" (->)
+                  , HAppendList l1 l2
+                  , Labelable "generator" r3 t1 t1 (r2 s1) (r2 t2)
+                  , Labelable "in-ch" r2 s1 t2 (HList l2) (HList l2)
+                  , Labelable "input" r3 t1 t1 (r1 s2) (r1 t3)
+                  , Labelable "out-ch" r1 s2 t3 (HList l1) (HList l1)) 
+               => r3 t1 -> HList (HAppendListR l1 l2)
 generatorChans ch = let inl  = hLens' inLabel
                         genl  = hLens' genLabel
                         inch = hLens' inChLabel
@@ -353,35 +324,10 @@ runDP :: forall a r2 r3 l1 r4 l2 t2 s t1 s2 t5 l3 l4.
                                   => DynamicPipeline a -> IO ()
 runDP DynamicPipeline{..} = do
   let (cIns, cGen, cOut) = inGenOut $ makeChans @a
-  runStage (run onInput) cIns >> runStage (run onGenerator) cGen >> runStage (run onOutput) cOut
+  async (runStage (run onInput) cIns) >> async (runStage (run onGenerator) cGen) >> async (runStage (run onOutput) cOut) >>= wait
 
 mkDP :: forall a. Stage (WithInput a IO) -> Stage (WithGenerator a IO) -> Stage (WithOutput a IO) -> DynamicPipeline a
 mkDP = DynamicPipeline @a
-
-pr :: IO ()
-pr = do 
-  let DynamicPipeline{..} = mkDP @DPExample input generator output
-  let chans = makeChans @DPExample
-  let cIns = inputChans chans
-  let cGen = generatorChans chans
-  let cOut = outputChans chans
-  async (runStage (run onInput) cIns) >> async (runStage (run onGenerator) cGen) >> async (runStage (run onOutput) cOut) >>= wait
-
--- prog :: forall a. (MkChans a, ValidDP (IsDP a), SameLabels (HChan a) (HChan a)) => IO ()
--- prog = do 
---   let DynamicPipeline{..} = mkDP @a input generator output
---   let chans = makeChans @a
---   let cIns = inputChans chans
---   let cGen = generatorChans chans
---   let cOut = outputChans chans
---   async (runStage (run onInput) cIns) >> async (runStage (run onGenerator) cGen) >> async (runStage (run onOutput) cOut) >>= wait
-
-
-{-
-  function = runDP @DPExample $
-    withInput @IO $ \a b -> .... 
-    :>> withGenerator @Identity $ \a b -> .... :>> withOutput @IO $ \a b -> ..
--}
 
 ---------------------------------------------------------------------------------------------------
 
@@ -396,14 +342,8 @@ generator = withGenerator @DPExample @IO $ \cin cout -> forall cin $ maybe (end 
 output :: Stage (ReadChannel Int -> IO ())
 output = withOutput @DPExample @IO $ \cin -> forall cin print
 
-chanInput :: HList '[WriteChannel Int]
-chanInput = inputChans $ makeChans @DPExample
-
-chanGen :: HList '[ReadChannel Int, WriteChannel Int]
-chanGen = generatorChans $ makeChans @DPExample
-
-chanOut :: HList '[ReadChannel Int]
-chanOut = outputChans $ makeChans @DPExample
+program :: IO ()
+program = runDP $ mkDP @DPExample input generator output
 
 -- filter :: Filter (NonEmpty (Actor a)) (..... ) 
 -- filter = mkFilter' @FilterC
@@ -412,29 +352,12 @@ chanOut = outputChans $ makeChans @DPExample
 
 -- newtype Filter a = Filter { unFilter :: NonEmpty (Actor a)}
 
--- data Param = forall a. Show a => Param a
-
--- elimParam :: (forall a. a -> r) -> Param -> r
--- elimParam f (Param a) = f a 
-
--- instance S.Show Param where
---   show (Param s) = R.show s
-
--- fn :: Param -> Param -> Param -> IO ()
--- fn a b c = print a >> print b >> print c
-
--- p' :: IO ()
--- p' = do 
---   let p = Param 1 `HCons` Param "Hello" `HCons` Param 2.0 `HCons` HNil
---   hUncurry fn p
-
 {-# INLINE forall #-}
 forall :: ReadChannel a -> (Maybe a -> IO ()) -> IO ()
 forall c io = do 
   e <- pull c
   io e
   maybe (pure ()) (const $ forall c io) e
-
 
 {-# NOINLINE newChannel #-}
 newChannel :: forall a. (WriteChannel a, ReadChannel a)
