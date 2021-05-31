@@ -102,6 +102,25 @@ type family WithGenerator (a :: Type) (m :: Type -> Type) :: Type where
                                                   ':$$: 'Text "Example: 'Input (Channel (Int :<+> Int)) :>> Generator (Channel (Int :<+> Int)) :>> Output'"
                                                 )
 
+type family WithFilter (a :: Type) (param :: Type) (m :: Type -> Type) :: Type where
+  WithFilter (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) param m                         
+                                                    = param -> WithFilter (ChanOutIn inToGen genToOut) param m
+  WithFilter (ChanIn (a :<+> more)) param m         = WriteChannel a -> WithFilter (ChanIn more) param m
+  WithFilter (ChanIn a) param m                     = WriteChannel a -> m ()
+  WithFilter (ChanOutIn (a :<+> more) ins) param m  = ReadChannel a -> WithFilter (ChanOutIn more ins) param m
+  WithFilter (ChanOutIn a ins) param m              = ReadChannel a -> WithFilter (ChanIn ins) param m 
+  WithFilter a _ _                                  = TypeError
+                                                ( 'Text "Invalid Semantic for Building DP Program"
+                                                  ':$$: 'Text "in the type '"
+                                                  ':<>: 'ShowType a
+                                                  ':<>: 'Text "'"
+                                                  ':$$: 'Text "Language Grammar:"
+                                                  ':$$: 'Text "DP    = Input CHANS :>> Generator CHANS :>> Output"
+                                                  ':$$: 'Text "CHANS = Channel CH"
+                                                  ':$$: 'Text "CH    = Type | Type :<+> CH"
+                                                  ':$$: 'Text "Example: 'Input (Channel (Int :<+> Int)) :>> Generator (Channel (Int :<+> Int)) :>> Output'"
+                                                )
+
 type family WithOutput (a :: Type) (m :: Type -> Type) :: Type where
   WithOutput (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) m                         
                                                = WithOutput (ChanOut genToOut) m
@@ -181,6 +200,11 @@ type family ExpandInputToCh (a :: Type) :: [Type] where
 type family ExpandGenToCh (a :: Type) :: [Type] where
   ExpandGenToCh (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) = HAppendListR (HChO (In (ChanIn (inToGen :<+> EndNode)))) 
                                                                                                      (HChI (Gen (ChanOutIn inToGen (genToOut :<+> EndNode))))
+
+type family ExpandFilterToCh (a :: Type) (param :: Type) :: [Type] where
+  ExpandFilterToCh (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) param = param ': HAppendListR (HChO (In (ChanIn (inToGen :<+> EndNode)))) 
+                                                                                                     (HChI (Gen (ChanOutIn inToGen (genToOut :<+> EndNode))))
+
 type family ExpandOutputToCh (a :: Type) :: [Type] where
   ExpandOutputToCh (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) = HChO (Gen (ChanOutIn inToGen (genToOut :<+> EndNode)))
 
@@ -321,29 +345,47 @@ runStage = hUncurry
 runStage' :: HCurry' n f xs r => Proxy n -> f -> HList xs -> r
 runStage' = hUncurry'
 
-newtype Actor s m a = Actor {  unActor :: MonadState s m => m () }
+newtype Actor s m a param = Actor {  unActor :: MonadState s m => Stage (WithFilter a param m) }
 
-newtype Filter s m a = Filter { unFilter :: NonEmpty (Actor s m a) }
+newtype Filter s m a param = Filter { unFilter :: NonEmpty (Actor s m a param) }
   deriving Generic
 
-instance Wrapped (Filter s m a)
+instance Wrapped (Filter s m a param)
 
-actor :: forall s m a. m () -> Filter s m a
-actor = Filter . actor'
+mkFilter :: forall s m a param. WithFilter a param m -> Filter s m a param
+mkFilter = Filter . single
 
-actor' :: forall s m a. m () -> NonEmpty (Actor s m a)
-actor' = one . Actor
+single :: forall s m a param. WithFilter a param m -> NonEmpty (Actor s m a param)
+single = one . actor 
 
-(|>>) :: forall s m a. m () -> Filter s m a -> Filter s m a
-(|>>) a f = f & _Wrapped' %~ (\p -> Actor a <| p)
+actor :: forall s m a param. WithFilter a param m -> Actor s m a param
+actor = Actor . mkStage' @(WithFilter a param m)
+
+(|>>) :: forall s m a param. WithFilter a param m -> Filter s m a param -> Filter s m a param
+(|>>) a f = f & _Wrapped' %~ (\p -> actor a <| p)
 infixr 5 |>>
 
---runFilter :: forall s m a. Filter s m a -> s -> m ()
-runFilter :: forall k (m :: * -> *) s (a :: k). Monad m => Filter s (StateT s m) a -> s -> m ()
-runFilter f s = flip evalStateT s . mapM_ unActor . unFilter $ f
+runActor :: forall a param m xs c s. ( ArityRev (WithFilter a param m) (HLength (ExpandFilterToCh a param))
+                                     , ArityFwd (WithFilter a param m) (HLength (ExpandFilterToCh a param))
+                                     , HCurry' (HLength (ExpandFilterToCh a param)) (WithFilter a param m) xs c, MonadState s m) 
+          => Actor s m a param -> HList xs -> c
+runActor ac = runStage . run $ unActor ac
 
-b :: (MonadIO m, MonadState Int m) => Filter Int m a
-b = (modify (+2) >> get >>= print . mappend "Hello: " . show) |>> actor (get >>= print . mappend "Hello 2: " . show)
+runFilter :: ( ArityRev (WithFilter a param m1) (HLength (ExpandFilterToCh a param))
+             , ArityFwd (WithFilter a param m1) (HLength (ExpandFilterToCh a param))
+             , HCurry' (HLength (ExpandFilterToCh a param)) (WithFilter a param m1) xs (StateT s1 m2 b), MonadState s2 m1, Monad m2) 
+           => HList xs -> Filter s2 m1 a param -> s1 -> m2 ()
+runFilter clist f s = flip evalStateT s . mapM_ (`runActor` clist) . unFilter $ f 
+
+-- >>> let (cIns, cGen, cOut) = inGenOut $ makeChans @DPExample
+-- >>> let p = (1::Int) `HCons` cGen
+-- >>> runFilter p b (1::Int)
+-- Couldn't match expected type ‘HList xs0’
+--             with actual type ‘Filter Int (StateT Int IO) DPExample Int’
+-- Couldn't match expected type ‘Filter s20 m10 a0 param0’
+--             with actual type ‘HList '[Int, ReadChannel Int, WriteChannel Int]’
+b :: Filter Int (StateT Int IO) DPExample Int
+b =  (\i _ _ -> print i) |>> mkFilter (\i _ _ -> print (i+1))
 
 withInput :: forall (a :: Type) (m :: Type -> Type). WithInput a m -> Stage (WithInput a m)
 withInput = mkStage' @(WithInput a m)
@@ -473,5 +515,8 @@ output = withOutput @DPExample @IO $ \cin -> forall cin print
 
 program :: IO ()
 program = runDP $ mkDP @DPExample input generator output
+
+-- b :: (MonadIO m, MonadState Int m) => Filter Int m a
+-- b = (modify (+2) >> get >>= print . mappend "Hello: " . show) |>> actor (get >>= print . mappend "Hello 2: " . show)
 
 
