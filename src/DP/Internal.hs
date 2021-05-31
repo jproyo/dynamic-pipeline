@@ -361,8 +361,12 @@ single = one . actor
 actor :: forall s m a param. WithFilter a param m -> Actor s m a param
 actor = Actor . mkStage' @(WithFilter a param m)
 
-(|>>) :: forall s m a param. WithFilter a param m -> Filter s m a param -> Filter s m a param
-(|>>) a f = f & _Wrapped' %~ (\p -> actor a <| p)
+(|>>>) :: forall s m a param. Actor s m a param -> Filter s m a param -> Filter s m a param
+(|>>>) a f = f & _Wrapped' %~ (a <|)
+infixr 5 |>>>
+
+(|>>) :: forall s m a param. Actor s m a param -> Actor s m a param -> Filter s m a param
+(|>>) a1 a2 = Filter (a1 <|one a2)
 infixr 5 |>>
 
 runActor :: forall a param m xs c s. ( ArityRev (WithFilter a param m) (HLength (ExpandFilterToCh a param))
@@ -380,12 +384,14 @@ runFilter clist f s = flip evalStateT s . mapM_ (`runActor` clist) . unFilter $ 
 -- >>> let (cIns, cGen, cOut) = inGenOut $ makeChans @DPExample
 -- >>> let p = (1::Int) `HCons` cGen
 -- >>> runFilter p b (1::Int)
--- Couldn't match expected type ‘HList xs0’
---             with actual type ‘Filter Int (StateT Int IO) DPExample Int’
--- Couldn't match expected type ‘Filter s20 m10 a0 param0’
---             with actual type ‘HList '[Int, ReadChannel Int, WriteChannel Int]’
-b :: Filter Int (StateT Int IO) DPExample Int
-b =  (\i _ _ -> print i) |>> mkFilter (\i _ _ -> print (i+1))
+filterEx :: Filter Int (StateT Int IO) DPExample Int
+filterEx =  actor (\i _ _ -> print i) |>>> actor (\i _ _ -> print (i+2)) |>> actor (\i _ _ -> print (i+3))
+
+runExample :: IO ()
+runExample = do
+  let (_, cGen, _) = inGenOut $ makeChans @DPExample
+  let p = (1::Int) `HCons` cGen
+  runFilter p filterEx (1::Int)
 
 withInput :: forall (a :: Type) (m :: Type -> Type). WithInput a m -> Stage (WithInput a m)
 withInput = mkStage' @(WithInput a m)
