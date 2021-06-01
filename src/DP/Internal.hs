@@ -83,24 +83,24 @@ type family WithInput (a :: Type) (m :: Type -> Type) :: Type where
                                                     ':$$: 'Text "Example: 'Input (Channel (Int :<+> Int)) :>> Generator (Channel (Int :<+> Int)) :>> Output'"
                                                   )
 
-type family WithGenerator (a :: Type) (m :: Type -> Type) :: Type where
-  WithGenerator (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) m                         
-                                                 = WithGenerator (ChanOutIn inToGen genToOut) m
-  WithGenerator (ChanIn (a :<+> more)) m         = WriteChannel a -> WithGenerator (ChanIn more) m
-  WithGenerator (ChanIn a) m                     = WriteChannel a -> m ()
-  WithGenerator (ChanOutIn (a :<+> more) ins) m  = ReadChannel a -> WithGenerator (ChanOutIn more ins) m
-  WithGenerator (ChanOutIn a ins) m              = ReadChannel a -> WithGenerator (ChanIn ins) m 
-  WithGenerator a _                              = TypeError
-                                                ( 'Text "Invalid Semantic for Building DP Program"
-                                                  ':$$: 'Text "in the type '"
-                                                  ':<>: 'ShowType a
-                                                  ':<>: 'Text "'"
-                                                  ':$$: 'Text "Language Grammar:"
-                                                  ':$$: 'Text "DP    = Input CHANS :>> Generator CHANS :>> Output"
-                                                  ':$$: 'Text "CHANS = Channel CH"
-                                                  ':$$: 'Text "CH    = Type | Type :<+> CH"
-                                                  ':$$: 'Text "Example: 'Input (Channel (Int :<+> Int)) :>> Generator (Channel (Int :<+> Int)) :>> Output'"
-                                                )
+type family WithGenerator (a :: Type) (filter :: Type) (m :: Type -> Type) :: Type where
+  WithGenerator (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) filter m                         
+                                                        = filter -> WithGenerator (ChanOutIn inToGen genToOut) filter m
+  WithGenerator (ChanIn (a :<+> more)) filter m         = WriteChannel a -> WithGenerator (ChanIn more) filter m
+  WithGenerator (ChanIn a) filter m                     = WriteChannel a -> m ()
+  WithGenerator (ChanOutIn (a :<+> more) ins) filter m  = ReadChannel a -> WithGenerator (ChanOutIn more ins) filter m
+  WithGenerator (ChanOutIn a ins) filter m              = ReadChannel a -> WithGenerator (ChanIn ins) filter m 
+  WithGenerator a _ _                                   = TypeError
+                                                            ( 'Text "Invalid Semantic for Building DP Program"
+                                                              ':$$: 'Text "in the type '"
+                                                              ':<>: 'ShowType a
+                                                              ':<>: 'Text "'"
+                                                              ':$$: 'Text "Language Grammar:"
+                                                              ':$$: 'Text "DP    = Input CHANS :>> Generator CHANS :>> Output"
+                                                              ':$$: 'Text "CHANS = Channel CH"
+                                                              ':$$: 'Text "CH    = Type | Type :<+> CH"
+                                                              ':$$: 'Text "Example: 'Input (Channel (Int :<+> Int)) :>> Generator (Channel (Int :<+> Int)) :>> Output'"
+                                                            )
 
 type family WithFilter (a :: Type) (param :: Type) (m :: Type -> Type) :: Type where
   WithFilter (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) param m                         
@@ -197,9 +197,9 @@ instance MkCh (Gen (ChanOutIn fromIn EndNode)) where
 type family ExpandInputToCh (a :: Type) :: [Type] where
   ExpandInputToCh (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) = HChI (In (ChanIn (inToGen :<+> EndNode)))
 
-type family ExpandGenToCh (a :: Type) :: [Type] where
-  ExpandGenToCh (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) = HAppendListR (HChO (In (ChanIn (inToGen :<+> EndNode)))) 
-                                                                                                     (HChI (Gen (ChanOutIn inToGen (genToOut :<+> EndNode))))
+type family ExpandGenToCh (a :: Type) (filter :: Type) :: [Type] where
+  ExpandGenToCh (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) filter = filter ': HAppendListR (HChO (In (ChanIn (inToGen :<+> EndNode)))) 
+                                                                                                                      (HChI (Gen (ChanOutIn inToGen (genToOut :<+> EndNode))))
 
 type family ExpandFilterToCh (a :: Type) (param :: Type) :: [Type] where
   ExpandFilterToCh (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) param = param ': HAppendListR (HChO (In (ChanIn (inToGen :<+> EndNode)))) 
@@ -345,6 +345,14 @@ runStage = hUncurry
 runStage' :: HCurry' n f xs r => Proxy n -> f -> HList xs -> r
 runStage' = hUncurry'
 
+data GeneratorStage s m a param = GeneratorStage 
+  { _gsGenerator      :: Stage (WithGenerator a (Filter s m a param) m)
+  , _gsFilterTemplate :: Filter s m a param
+  }
+
+mkGenerator :: Stage (WithGenerator a (Filter s m a param) m) -> Filter s m a param -> GeneratorStage s m a param
+mkGenerator = GeneratorStage
+
 newtype Actor s m a param = Actor {  unActor :: MonadState s m => Stage (WithFilter a param m) }
 
 newtype Filter s m a param = Filter { unFilter :: NonEmpty (Actor s (StateT s m) a param) }
@@ -369,63 +377,60 @@ infixr 5 |>>>
 (|>>) a1 a2 = Filter (a1 <|one a2)
 infixr 5 |>>
 
-runActor :: ( ArityRev (WithFilter a param m) n
-            , ArityFwd (WithFilter a param m) n
-            , HCurry' n (WithFilter a param m) xs r, MonadState s m)
+runActor :: ( ArityRev (WithFilter a param m) (HLength (ExpandFilterToCh a param))
+            , ArityFwd (WithFilter a param m) (HLength (ExpandFilterToCh a param))
+            , HCurry' (HLength (ExpandFilterToCh a param)) (WithFilter a param m) xs r, MonadState s m)
          => Actor s m a param -> HList xs -> r
 runActor ac = runStage . run $ unActor ac
 
-runFilter :: ( ArityRev (WithFilter a param (StateT s1 m1)) n
-             , ArityFwd (WithFilter a param (StateT s1 m1)) n
-             , HCurry' n (WithFilter a param (StateT s1 m1)) xs (StateT s2 m2 b)
+runFilter :: ( ArityRev (WithFilter a param (StateT s1 m1)) (HLength (ExpandFilterToCh a param))
+             , ArityFwd (WithFilter a param (StateT s1 m1)) (HLength (ExpandFilterToCh a param))
+             , HCurry' (HLength (ExpandFilterToCh a param)) (WithFilter a param (StateT s1 m1)) xs (StateT s2 m2 b)
              , Monad m2, Monad m1) 
            => HList xs -> Filter s1 m1 a param -> s2 -> m2 ()
 runFilter clist f s = flip evalStateT s . mapM_ (`runActor` clist) . unFilter $ f 
 
-filterEx :: Filter Int IO DPExample Int
-filterEx =  actor (\i _ _ -> print i) |>>> actor (\i _ _ -> print (i+2)) |>> actor (\i _ _ -> print (i+3))
-
-runExample :: IO ()
-runExample = do
-  let (_, cGen, _) = inGenOut $ makeChans @DPExample
-  let p = (1::Int) `HCons` cGen
-  runFilter p filterEx (1::Int)
-
 withInput :: forall (a :: Type) (m :: Type -> Type). WithInput a m -> Stage (WithInput a m)
 withInput = mkStage' @(WithInput a m)
 
-withGenerator :: forall (a :: Type) (m :: Type -> Type). WithGenerator a m -> Stage (WithGenerator a m)
-withGenerator = mkStage' @(WithGenerator a m)
+withGenerator :: forall (a :: Type) (filter :: Type) (m :: Type -> Type). WithGenerator a filter m -> Stage (WithGenerator a filter m)
+withGenerator = mkStage' @(WithGenerator a filter m)
 
 withOutput :: forall (a :: Type) (m :: Type -> Type). WithOutput a m -> Stage (WithOutput a m)
 withOutput = mkStage' @(WithOutput a m)
 
-data DynamicPipeline a = ValidDP (IsDP a) => DynamicPipeline 
-  { onInput     :: Stage (WithInput a IO)
-  , onGenerator :: Stage (WithGenerator a IO)
-  , onOutput    :: Stage (WithOutput a IO)
+data DynamicPipeline a s param = ValidDP (IsDP a) => DynamicPipeline 
+  { input     :: Stage (WithInput a IO)
+  , generator :: GeneratorStage s IO a param 
+  , output    :: Stage (WithOutput a IO)
   }
 
-runDP :: forall a r2 r3 l1 r4 l2 t2 s t1 s2 t5 l3 l4. 
+runDP :: forall a s param filter r2 r3 l1 r4 l2 t2 s1 t1 s2 t5 l3 l4. 
                                   ( MkChans a
                                   , Record (HChan a) ~ r3 t2
+                                  , Filter s IO a param ~ filter
                                   , ArityRev (WithInput a IO) (HLength (ExpandInputToCh a))
                                   , ArityFwd (WithInput a IO) (HLength (ExpandInputToCh a))
                                   , HCurry' (HLength (ExpandInputToCh a)) (WithInput a IO) l3 (IO ())
-                                  , ArityRev (WithGenerator a IO) (HLength (ExpandGenToCh a))
-                                  , ArityFwd (WithGenerator a IO) (HLength (ExpandGenToCh a))
-                                  , HCurry' (HLength (ExpandGenToCh a)) (WithGenerator a IO) (HAppendListR l1 l2) (IO ())
+                                  , ArityRev (WithGenerator a filter IO) (HLength (ExpandGenToCh a filter))
+                                  , ArityFwd (WithGenerator a filter IO) (HLength (ExpandGenToCh a filter))
+                                  , HCurry' (HLength (ExpandGenToCh a filter)) (WithGenerator a filter IO) (filter ': HAppendListR l1 l2) (IO ())
                                   , ArityRev (WithOutput a IO) (HLength (ExpandOutputToCh a))
                                   , ArityFwd (WithOutput a IO) (HLength (ExpandOutputToCh a))
                                   , HCurry' (HLength (ExpandOutputToCh a)) (WithOutput a IO) l4 (IO ())
-                                  , AllChans r2 r3 l1 r4 l2 t2 s t1 s2 t5 l3 l4)
-                                  => DynamicPipeline a -> IO ()
+                                  , AllChans r2 r3 l1 r4 l2 t2 s1 t1 s2 t5 l3 l4)
+                                  => DynamicPipeline a s param -> IO ()
 runDP DynamicPipeline{..} = do
   let (cIns, cGen, cOut) = inGenOut $ makeChans @a
-  async (runStage (run onInput) cIns) >> async (runStage (run onGenerator) cGen) >> async (runStage (run onOutput) cOut) >>= wait
+  let genWithFilter      = _gsFilterTemplate generator `HCons` cGen
+  async (runStage (run input) cIns)
+    >> async (runStage @(HLength (ExpandGenToCh a filter)) @(WithGenerator a filter IO) (run (_gsGenerator generator)) genWithFilter) 
+    >> async (runStage (run output) cOut) 
+    >>= wait
 
-mkDP :: forall a. ValidDP (IsDP a) => Stage (WithInput a IO) -> Stage (WithGenerator a IO) -> Stage (WithOutput a IO) -> DynamicPipeline a
+mkDP :: forall a s param. ValidDP (IsDP a) => Stage (WithInput a IO) -> GeneratorStage s IO a param -> Stage (WithOutput a IO) -> DynamicPipeline a s param
 mkDP = DynamicPipeline @a
+
 {-# INLINE forall #-}
 forall :: ReadChannel a -> (Maybe a -> IO ()) -> IO ()
 forall c io = do 
@@ -449,11 +454,6 @@ push a c = writeChan (unWrite c) (Just a)
 pull :: ReadChannel a -> IO (Maybe a)
 pull = readChan (CC.threadDelay 100) . unRead
 
-
--- {-# INLINE foldrS #-}
--- foldrS :: (Stage a b -> a -> IO (Stage a b)) -> Stage a b -> IO (Stage a b)
--- foldrS = loop
---   where loop fio c = maybe (return c) (loop fio <=< fio c) =<< pullIn c
 
 -- {-# INLINE (|>>) #-}
 -- (|>>) :: Stage a b -> (a -> IO c) -> IO (Stage c b)
@@ -508,19 +508,59 @@ pull = readChan (CC.threadDelay 100) . unRead
 
 type DPExample = Input (Channel Int) :>> Generator (Channel Int) :>> Output
 
-input :: Stage (WriteChannel Int -> IO ())
-input = withInput @DPExample @IO $ \cout -> forM_ [1..100] (`push` cout) >> end cout
+input' :: Stage (WriteChannel Int -> IO ())
+input' = withInput @DPExample @IO $ \cout -> forM_ [1..100] (`push` cout) >> end cout
 
-generator :: Stage (ReadChannel Int -> WriteChannel Int -> IO ())
-generator = withGenerator @DPExample @IO $ \cin cout -> forall cin $ maybe (end cout) (flip push cout . (+1))
+generator' :: GeneratorStage Int IO DPExample Int
+generator' = let 
+                 filterTemp :: Filter Int IO DPExample Int
+                 filterTemp = actor actor1 |>>> actor actor2 |>> actor actor3
 
-output :: Stage (ReadChannel Int -> IO ())
-output = withOutput @DPExample @IO $ \cin -> forall cin print
+                 actor1 i _ _ = modify (i+)
+                 
+                 actor2 _ _ _ = modify (+2)
+
+                 actor3 _ rc wc = do 
+                   memory <- get
+                   liftIO $ push memory wc
+                   liftIO $ forall rc $ maybe (end wc) (`push` wc)
+
+                 gen        = withGenerator @DPExample @(Filter Int IO DPExample Int) @IO $ genAction                 
+              in mkGenerator gen filterTemp
+
+genAction :: Filter Int IO DPExample Int -> ReadChannel Int -> WriteChannel Int -> IO ()
+genAction filter' cin cout = do 
+  cin' <- foldrS filter' cin
+  forall cin' $ maybe (end cout) (`push` cout) 
+
+
+foldrS :: Filter Int IO DPExample Int -> ReadChannel Int -> IO (ReadChannel Int)
+foldrS = loop
+  where 
+    loop fil c = maybe (return c) (loop fil <=< onElem fil c) =<< pull c
+
+    onElem filter' cin elem' = do
+      let (newWrite, newRead) = newChannel 
+      let hlist = elem' `HCons` cin `HCons` newWrite `HCons` HNil
+      void $ async $ runFilter hlist filter' 1
+      return newRead
+
+output' :: Stage (ReadChannel Int -> IO ())
+output' = withOutput @DPExample @IO $ flip forall print
 
 program :: IO ()
-program = runDP $ mkDP @DPExample input generator output
+program = runDP $ mkDP @DPExample input' generator' output'
 
--- b :: (MonadIO m, MonadState Int m) => Filter Int m a
--- b = (modify (+2) >> get >>= print . mappend "Hello: " . show) |>> actor (get >>= print . mappend "Hello 2: " . show)
+----------------------------------------------------------------------------------------------------------------------------------
+
+filterEx :: Filter Int IO DPExample Int
+filterEx =  actor (\i _ _ -> print i) |>>> actor (\i _ _ -> print (i+2)) |>> actor (\i _ _ -> print (i+3))
+
+runExample :: IO ()
+runExample = do
+  let (_, cGen, _) = inGenOut $ makeChans @DPExample
+  let p = (1::Int) `HCons` cGen
+  runFilter p filterEx (1::Int)
+
 
 
