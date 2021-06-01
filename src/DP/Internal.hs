@@ -347,44 +347,42 @@ runStage' = hUncurry'
 
 newtype Actor s m a param = Actor {  unActor :: MonadState s m => Stage (WithFilter a param m) }
 
-newtype Filter s m a param = Filter { unFilter :: NonEmpty (Actor s m a param) }
+newtype Filter s m a param = Filter { unFilter :: NonEmpty (Actor s (StateT s m) a param) }
   deriving Generic
 
 instance Wrapped (Filter s m a param)
 
-mkFilter :: forall s m a param. WithFilter a param m -> Filter s m a param
+mkFilter :: forall s m a param. WithFilter a param (StateT s m) -> Filter s m a param
 mkFilter = Filter . single
 
-single :: forall s m a param. WithFilter a param m -> NonEmpty (Actor s m a param)
+single :: forall s m a param. WithFilter a param (StateT s m) -> NonEmpty (Actor s (StateT s m) a param)
 single = one . actor 
 
 actor :: forall s m a param. WithFilter a param m -> Actor s m a param
 actor = Actor . mkStage' @(WithFilter a param m)
 
-(|>>>) :: forall s m a param. Actor s m a param -> Filter s m a param -> Filter s m a param
+(|>>>) :: forall s m a param. Actor s (StateT s m) a param -> Filter s m a param -> Filter s m a param
 (|>>>) a f = f & _Wrapped' %~ (a <|)
 infixr 5 |>>>
 
-(|>>) :: forall s m a param. Actor s m a param -> Actor s m a param -> Filter s m a param
+(|>>) :: forall s m a param. Actor s (StateT s m) a param -> Actor s (StateT s m) a param -> Filter s m a param
 (|>>) a1 a2 = Filter (a1 <|one a2)
 infixr 5 |>>
 
-runActor :: forall a param m xs c s. ( ArityRev (WithFilter a param m) (HLength (ExpandFilterToCh a param))
-                                     , ArityFwd (WithFilter a param m) (HLength (ExpandFilterToCh a param))
-                                     , HCurry' (HLength (ExpandFilterToCh a param)) (WithFilter a param m) xs c, MonadState s m) 
-          => Actor s m a param -> HList xs -> c
+runActor :: ( ArityRev (WithFilter a param m) n
+            , ArityFwd (WithFilter a param m) n
+            , HCurry' n (WithFilter a param m) xs r, MonadState s m)
+         => Actor s m a param -> HList xs -> r
 runActor ac = runStage . run $ unActor ac
 
-runFilter :: ( ArityRev (WithFilter a param m1) (HLength (ExpandFilterToCh a param))
-             , ArityFwd (WithFilter a param m1) (HLength (ExpandFilterToCh a param))
-             , HCurry' (HLength (ExpandFilterToCh a param)) (WithFilter a param m1) xs (StateT s1 m2 b), MonadState s2 m1, Monad m2) 
-           => HList xs -> Filter s2 m1 a param -> s1 -> m2 ()
+runFilter :: ( ArityRev (WithFilter a param (StateT s1 m1)) n
+             , ArityFwd (WithFilter a param (StateT s1 m1)) n
+             , HCurry' n (WithFilter a param (StateT s1 m1)) xs (StateT s2 m2 b)
+             , Monad m2, Monad m1) 
+           => HList xs -> Filter s1 m1 a param -> s2 -> m2 ()
 runFilter clist f s = flip evalStateT s . mapM_ (`runActor` clist) . unFilter $ f 
 
--- >>> let (cIns, cGen, cOut) = inGenOut $ makeChans @DPExample
--- >>> let p = (1::Int) `HCons` cGen
--- >>> runFilter p b (1::Int)
-filterEx :: Filter Int (StateT Int IO) DPExample Int
+filterEx :: Filter Int IO DPExample Int
 filterEx =  actor (\i _ _ -> print i) |>>> actor (\i _ _ -> print (i+2)) |>> actor (\i _ _ -> print (i+3))
 
 runExample :: IO ()
