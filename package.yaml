@@ -79,9 +79,9 @@ library:
       other-modules: Paths_connected_comp
 
 executables:
-  dummy-example:
+  repeated-example:
     source-dirs:
-      examples/dummy
+      examples/repeated
     main:
       Main.hs
     dependencies:

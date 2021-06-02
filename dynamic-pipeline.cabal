@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: ab822ddd48357de7c30e59d91e171553f7c7283e3f95cdf73165ec2e1953f6dd
+-- hash: e43237658a8540bd0b51e927f0bb5e04f9c81ce51ef28f296df4ae08e433dd77
 
 name:           dynamic-pipeline
 version:        0.1.0.0
@@ -50,12 +50,12 @@ library
         Paths_connected_comp
   default-language: Haskell2010
 
-executable dummy-example
+executable repeated-example
   main-is: Main.hs
   other-modules:
       Paths_dynamic_pipeline
   hs-source-dirs:
-      examples/dummy
+      examples/repeated
   default-extensions: ConstraintKinds DataKinds DefaultSignatures DeriveAnyClass DeriveFoldable DeriveFunctor DeriveGeneric DeriveLift DeriveTraversable DerivingStrategies DerivingVia EmptyCase FlexibleContexts FlexibleInstances FunctionalDependencies GADTs GeneralizedNewtypeDeriving LambdaCase MultiParamTypeClasses MultiWayIf NoImplicitPrelude OverloadedStrings PackageImports PartialTypeSignatures PolyKinds Rank2Types RankNTypes RecordWildCards ScopedTypeVariables StandaloneDeriving TemplateHaskell TupleSections TypeApplications TypeOperators TypeFamilies
   ghc-options: -Wall -fno-warn-partial-type-signatures -fconstraint-solver-iterations=0 -Wincomplete-record-updates -Wincomplete-uni-patterns -Wredundant-constraints -Wno-unused-top-binds -fno-warn-deprecations -fno-warn-orphans -threaded -O3 -rtsopts -with-rtsopts=-N
   build-depends:
