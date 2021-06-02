@@ -78,6 +78,22 @@ library:
     - condition: false
       other-modules: Paths_connected_comp
 
+executables:
+  dummy-example:
+    source-dirs:
+      examples/dummy
+    main:
+      Main.hs
+    dependencies:
+      - dynamic-pipeline
+      - async
+      - HList
+    ghc-options:
+      - -threaded
+      - -O3
+      - -rtsopts
+      - -with-rtsopts=-N
+
 tests:
   conn-comp-tests:
     main: Spec.hs

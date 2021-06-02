@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 49f54b735ecadbc3be39bafdb6ab40d4489017ccafcf56ce1e7697144e1051ae
+-- hash: ab822ddd48357de7c30e59d91e171553f7c7283e3f95cdf73165ec2e1953f6dd
 
 name:           dynamic-pipeline
 version:        0.1.0.0
@@ -48,6 +48,28 @@ library
   if false
     other-modules:
         Paths_connected_comp
+  default-language: Haskell2010
+
+executable dummy-example
+  main-is: Main.hs
+  other-modules:
+      Paths_dynamic_pipeline
+  hs-source-dirs:
+      examples/dummy
+  default-extensions: ConstraintKinds DataKinds DefaultSignatures DeriveAnyClass DeriveFoldable DeriveFunctor DeriveGeneric DeriveLift DeriveTraversable DerivingStrategies DerivingVia EmptyCase FlexibleContexts FlexibleInstances FunctionalDependencies GADTs GeneralizedNewtypeDeriving LambdaCase MultiParamTypeClasses MultiWayIf NoImplicitPrelude OverloadedStrings PackageImports PartialTypeSignatures PolyKinds Rank2Types RankNTypes RecordWildCards ScopedTypeVariables StandaloneDeriving TemplateHaskell TupleSections TypeApplications TypeOperators TypeFamilies
+  ghc-options: -Wall -fno-warn-partial-type-signatures -fconstraint-solver-iterations=0 -Wincomplete-record-updates -Wincomplete-uni-patterns -Wredundant-constraints -Wno-unused-top-binds -fno-warn-deprecations -fno-warn-orphans -threaded -O3 -rtsopts -with-rtsopts=-N
+  build-depends:
+      HList
+    , async
+    , base >=4.7 && <5
+    , bytestring
+    , containers
+    , dynamic-pipeline
+    , exceptions
+    , lens
+    , relude >=1.0.0.0
+    , trifecta
+    , unagi-chan
   default-language: Haskell2010
 
 test-suite conn-comp-tests

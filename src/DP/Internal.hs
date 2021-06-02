@@ -12,7 +12,6 @@ import GHC.TypeLits
 import Data.List.NonEmpty
 import Data.HList
 import Data.HList.Labelable
-import System.IO.Unsafe
 import Control.Lens hiding ((<|))
 
 newtype WriteChannel a = WriteChannel { unWrite :: InChan (Maybe a) }
@@ -163,36 +162,38 @@ outChLabel = Label
 class MkCh (a :: Type) where
   type HChI a :: [Type]
   type HChO a :: [Type]
-  mkCh :: Proxy a -> (HList (HChI a), HList (HChO a))
+  mkCh :: Proxy a -> IO (HList (HChI a), HList (HChO a))
 
 instance MkCh (In (ChanIn more)) => MkCh (In (ChanIn (a :<+> more))) where
   type HChI (In (ChanIn (a :<+> more))) = WriteChannel a ': HChI (In (ChanIn more))
   type HChO (In (ChanIn (a :<+> more))) = ReadChannel a ': HChO (In (ChanIn more))
-  mkCh _ = let (i, o) = newChannel @a 
-               (il, ol) = mkCh (Proxy @(In (ChanIn more)))
-            in (i `HCons` il, o `HCons` ol)
+  mkCh _ = do 
+    (i, o) <- newChannel @a 
+    (il, ol) <- mkCh (Proxy @(In (ChanIn more)))
+    return (i `HCons` il, o `HCons` ol)
 
 instance MkCh (Out a) where
   type HChI (Out a) = '[]
   type HChO (Out a) = '[]
-  mkCh _ = (HNil, HNil)
+  mkCh _ = return (HNil, HNil)
 
 instance MkCh (Gen (ChanOutIn fromIn more)) => MkCh (Gen (ChanOutIn fromIn (a :<+> more))) where
   type HChI (Gen (ChanOutIn fromIn (a :<+> more))) = WriteChannel a ': HChI (Gen (ChanOutIn fromIn more))
   type HChO (Gen (ChanOutIn fromIn (a :<+> more))) = ReadChannel a ': HChO (Gen (ChanOutIn fromIn more))
-  mkCh _ = let (i, o) = newChannel @a 
-               (il, ol) = mkCh (Proxy @(Gen (ChanOutIn fromIn more)))
-            in (i `HCons` il, o `HCons` ol)
+  mkCh _ = do 
+    (i, o) <- newChannel @a 
+    (il, ol) <- mkCh (Proxy @(Gen (ChanOutIn fromIn more)))
+    return (i `HCons` il, o `HCons` ol)
 
 instance MkCh (In (ChanIn EndNode)) where
   type HChI (In (ChanIn EndNode)) = '[]
   type HChO (In (ChanIn EndNode)) = '[]
-  mkCh _ = (HNil, HNil) 
+  mkCh _ = return (HNil, HNil) 
 
 instance MkCh (Gen (ChanOutIn fromIn EndNode)) where
   type HChI (Gen (ChanOutIn fromIn EndNode)) = '[]
   type HChO (Gen (ChanOutIn fromIn EndNode)) = '[]
-  mkCh _ = (HNil, HNil)
+  mkCh _ = return (HNil, HNil)
 
 type family ExpandInputToCh (a :: Type) :: [Type] where
   ExpandInputToCh (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) = HChI (In (ChanIn (inToGen :<+> EndNode)))
@@ -210,7 +211,7 @@ type family ExpandOutputToCh (a :: Type) :: [Type] where
 
 class MkChans (a :: Type) where
   type HChan a :: [Type]
-  mkChans :: Proxy a -> Record (HChan a)
+  mkChans :: Proxy a -> IO (Record (HChan a))
   
 instance ( MkCh (In (ChanIn (inToGen :<+> EndNode)))
          , MkCh (Gen (ChanOutIn inToGen (genToOut :<+> EndNode)))
@@ -229,18 +230,19 @@ instance ( MkCh (In (ChanIn (inToGen :<+> EndNode)))
        , Tagged "output" (Record '[ Tagged "in-ch" (HList (HChI (Out (ChanIn (genToOut :<+> EndNode)))))])
        ]
     
-  mkChans _ = let (ii, io) = mkCh (Proxy @(In (ChanIn (inToGen :<+> EndNode))))
-                  (gi, go) = mkCh (Proxy @(Gen (ChanOutIn inToGen (genToOut :<+> EndNode))))
-                  (oi, _) = mkCh (Proxy @(Out (ChanIn (genToOut :<+> EndNode))))
-               in (inLabel .=. (inChLabel .=. ii .*. outChLabel .=. io .*. emptyRecord))
-                   .*. 
-                   (genLabel .=. (inChLabel .=. gi .*. outChLabel .=. go .*. emptyRecord))
-                   .*. 
-                   (outLabel .=. (inChLabel .=. oi .*. emptyRecord))
-                   .*.
-                   emptyRecord
+  mkChans _ =  do
+    (ii, io) <- mkCh (Proxy @(In (ChanIn (inToGen :<+> EndNode))))
+    (gi, go) <- mkCh (Proxy @(Gen (ChanOutIn inToGen (genToOut :<+> EndNode))))
+    (oi, _)  <- mkCh (Proxy @(Out (ChanIn (genToOut :<+> EndNode))))
+    return $ (inLabel .=. (inChLabel .=. ii .*. outChLabel .=. io .*. emptyRecord))
+              .*. 
+              (genLabel .=. (inChLabel .=. gi .*. outChLabel .=. go .*. emptyRecord))
+              .*. 
+              (outLabel .=. (inChLabel .=. oi .*. emptyRecord))
+              .*.
+              emptyRecord
 
-makeChans :: forall (a :: Type). MkChans a => Record (HChan a)
+makeChans :: forall (a :: Type). MkChans a => IO (Record (HChan a))
 makeChans = mkChans (Proxy @a)
 
 inputChans :: ( LabeledOpticF (LabelableTy r1) (Const t1)
@@ -421,26 +423,25 @@ runDP :: forall a s param filter r2 r3 l1 r4 l2 t2 s1 t1 s2 t5 l3 l4.
                                   , AllChans r2 r3 l1 r4 l2 t2 s1 t1 s2 t5 l3 l4)
                                   => DynamicPipeline a s param -> IO ()
 runDP DynamicPipeline{..} = do
-  let (cIns, cGen, cOut) = inGenOut $ makeChans @a
+  (cIns, cGen, cOut) <- inGenOut <$> makeChans @a
   let genWithFilter      = _gsFilterTemplate generator `HCons` cGen
-  async (runStage (run input) cIns)
-    >> async (runStage @(HLength (ExpandGenToCh a filter)) @(WithGenerator a filter IO) (run (_gsGenerator generator)) genWithFilter) 
-    >> async (runStage (run output) cOut) 
-    >>= wait
+  _ <- async (runStage (run input) cIns)
+  _ <- async (runStage @(HLength (ExpandGenToCh a filter)) @(WithGenerator a filter IO) (run (_gsGenerator generator)) genWithFilter)
+  oa <- async (runStage (run output) cOut) 
+  wait oa
 
 mkDP :: forall a s param. ValidDP (IsDP a) => Stage (WithInput a IO) -> GeneratorStage s IO a param -> Stage (WithOutput a IO) -> DynamicPipeline a s param
 mkDP = DynamicPipeline @a
 
 {-# INLINE forall #-}
-forall :: ReadChannel a -> (Maybe a -> IO ()) -> IO ()
-forall c io = do 
-  e <- pull c
-  io e
-  maybe (pure ()) (const $ forall c io) e
+forall :: ReadChannel a -> (a -> IO ()) -> IO ()
+forall = loop
+  where 
+    loop c io = maybe (pure ()) (\e -> io e >> loop c io) =<< pull c
 
 {-# NOINLINE newChannel #-}
-newChannel :: forall a. (WriteChannel a, ReadChannel a)
-newChannel = bimap WriteChannel ReadChannel $ unsafePerformIO newChan
+newChannel :: forall a. IO (WriteChannel a, ReadChannel a)
+newChannel = bimap WriteChannel ReadChannel <$> newChan
 
 {-# INLINE end #-}
 end :: WriteChannel a -> IO ()
@@ -506,61 +507,17 @@ pull = readChan (CC.threadDelay 100) . unRead
 
 ---------------------------------------------------------------------------------------------------
 
-type DPExample = Input (Channel Int) :>> Generator (Channel Int) :>> Output
-
-input' :: Stage (WriteChannel Int -> IO ())
-input' = withInput @DPExample @IO $ \cout -> forM_ [1..100] (`push` cout) >> end cout
-
-generator' :: GeneratorStage Int IO DPExample Int
-generator' = let 
-                 filterTemp :: Filter Int IO DPExample Int
-                 filterTemp = actor actor1 |>>> actor actor2 |>> actor actor3
-
-                 actor1 i _ _ = modify (i+)
-                 
-                 actor2 _ _ _ = modify (+2)
-
-                 actor3 _ rc wc = do 
-                   memory <- get
-                   liftIO $ push memory wc
-                   liftIO $ forall rc $ maybe (end wc) (`push` wc)
-
-                 gen        = withGenerator @DPExample @(Filter Int IO DPExample Int) @IO $ genAction                 
-              in mkGenerator gen filterTemp
-
-genAction :: Filter Int IO DPExample Int -> ReadChannel Int -> WriteChannel Int -> IO ()
-genAction filter' cin cout = do 
-  cin' <- foldrS filter' cin
-  forall cin' $ maybe (end cout) (`push` cout) 
-
-
-foldrS :: Filter Int IO DPExample Int -> ReadChannel Int -> IO (ReadChannel Int)
-foldrS = loop
-  where 
-    loop fil c = maybe (return c) (loop fil <=< onElem fil c) =<< pull c
-
-    onElem filter' cin elem' = do
-      let (newWrite, newRead) = newChannel 
-      let hlist = elem' `HCons` cin `HCons` newWrite `HCons` HNil
-      void $ async $ runFilter hlist filter' 1
-      return newRead
-
-output' :: Stage (ReadChannel Int -> IO ())
-output' = withOutput @DPExample @IO $ flip forall print
-
-program :: IO ()
-program = runDP $ mkDP @DPExample input' generator' output'
 
 ----------------------------------------------------------------------------------------------------------------------------------
 
-filterEx :: Filter Int IO DPExample Int
-filterEx =  actor (\i _ _ -> print i) |>>> actor (\i _ _ -> print (i+2)) |>> actor (\i _ _ -> print (i+3))
+-- filterEx :: Filter Int IO DPExample Int
+-- filterEx =  actor (\i _ _ -> print i) |>>> actor (\i _ _ -> print (i+2)) |>> actor (\i _ _ -> print (i+3))
 
-runExample :: IO ()
-runExample = do
-  let (_, cGen, _) = inGenOut $ makeChans @DPExample
-  let p = (1::Int) `HCons` cGen
-  runFilter p filterEx (1::Int)
+-- runExample :: IO ()
+-- runExample = do
+--   let (_, cGen, _) = inGenOut $ makeChans @DPExample
+--   let p = (1::Int) `HCons` cGen
+--   runFilter p filterEx (1::Int)
 
 
 
