@@ -5,7 +5,7 @@ import           Data.HList
 import           DynamicPipeline
 import           Relude
 
-type DPExample = Input (Channel Int) :>> Generator (Channel Int) :>> Output
+type DPExample = Input (Channel (Int :<+> Eof)) :>> Generator (Channel (Int :<+> Eof)) :>> Output
 
 input' :: Stage (WriteChannel Int -> IO ())
 input' = withInput @DPExample @IO $ \cout -> forM_ ([1 .. 1000] <> [1 .. 1000]) (`push` cout) >> end cout

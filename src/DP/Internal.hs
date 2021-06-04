@@ -45,7 +45,7 @@ type family IsDP (a :: k) :: Bool where
         :>> Output)
                                             = And (IsDP (Input (Channel inToGen))) (IsDP (Generator (Channel genToOut)))
   IsDP (Input (Channel (a :<+> more)))      = IsDP (Input (Channel more))
-  IsDP (Input (Channel a))                  = 'True
+  IsDP (Input (Channel Eof))                = 'True
   IsDP (Generator (Channel (a :<+> more)))  = IsDP (Generator (Channel more))
   IsDP (Generator (Channel a))              = 'True
   IsDP x                                    = 'False
@@ -67,9 +67,9 @@ type family WithInput (a :: Type) (m :: Type -> Type) :: Type where
   WithInput (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) m                         
                                              = WithInput (ChanIn inToGen) m
   WithInput (ChanIn (a :<+> more)) m         = WriteChannel a -> WithInput (ChanIn more) m
-  WithInput (ChanIn a) m                     = WriteChannel a -> m ()
+  WithInput (ChanIn Eof) m                   = m ()
   WithInput (ChanOutIn (a :<+> more) ins) m  = ReadChannel a -> WithInput (ChanOutIn more ins) m
-  WithInput (ChanOutIn a ins) m              = ReadChannel a -> WithInput (ChanIn ins) m 
+  WithInput (ChanOutIn Eof ins) m            = WithInput (ChanIn ins) m 
   WithInput a _                              = TypeError
                                                   ( 'Text "Invalid Semantic for Building DP Program"
                                                     ':$$: 'Text "in the type '"
@@ -86,9 +86,9 @@ type family WithGenerator (a :: Type) (filter :: Type) (m :: Type -> Type) :: Ty
   WithGenerator (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) filter m                         
                                                         = filter -> WithGenerator (ChanOutIn inToGen genToOut) filter m
   WithGenerator (ChanIn (a :<+> more)) filter m         = WriteChannel a -> WithGenerator (ChanIn more) filter m
-  WithGenerator (ChanIn a) filter m                     = WriteChannel a -> m ()
+  WithGenerator (ChanIn Eof) filter m                   = m ()
   WithGenerator (ChanOutIn (a :<+> more) ins) filter m  = ReadChannel a -> WithGenerator (ChanOutIn more ins) filter m
-  WithGenerator (ChanOutIn a ins) filter m              = ReadChannel a -> WithGenerator (ChanIn ins) filter m 
+  WithGenerator (ChanOutIn Eof ins) filter m            = WithGenerator (ChanIn ins) filter m 
   WithGenerator a _ _                                   = TypeError
                                                             ( 'Text "Invalid Semantic for Building DP Program"
                                                               ':$$: 'Text "in the type '"
@@ -105,9 +105,9 @@ type family WithFilter (a :: Type) (param :: Type) (m :: Type -> Type) :: Type w
   WithFilter (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) param m                         
                                                     = param -> WithFilter (ChanOutIn inToGen genToOut) param m
   WithFilter (ChanIn (a :<+> more)) param m         = WriteChannel a -> WithFilter (ChanIn more) param m
-  WithFilter (ChanIn a) param m                     = WriteChannel a -> m ()
+  WithFilter (ChanIn Eof) param m                   = m ()
   WithFilter (ChanOutIn (a :<+> more) ins) param m  = ReadChannel a -> WithFilter (ChanOutIn more ins) param m
-  WithFilter (ChanOutIn a ins) param m              = ReadChannel a -> WithFilter (ChanIn ins) param m 
+  WithFilter (ChanOutIn Eof ins) param m            = WithFilter (ChanIn ins) param m 
   WithFilter a _ _                                  = TypeError
                                                 ( 'Text "Invalid Semantic for Building DP Program"
                                                   ':$$: 'Text "in the type '"
@@ -124,7 +124,7 @@ type family WithOutput (a :: Type) (m :: Type -> Type) :: Type where
   WithOutput (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) m                         
                                                = WithOutput (ChanOut genToOut) m
   WithOutput (ChanOut (a :<+> more)) m         = ReadChannel a -> WithOutput (ChanOut more) m
-  WithOutput (ChanOut a) m                     = ReadChannel a -> m ()
+  WithOutput (ChanOut Eof) m                   = m ()
   WithOutput a _                              = TypeError
                                                   ( 'Text "Invalid Semantic for Building DP Program"
                                                     ':$$: 'Text "in the type '"
@@ -138,10 +138,7 @@ type family WithOutput (a :: Type) (m :: Type -> Type) :: Type where
                                                   )
 
 -- Type encoding for Building Chans. Only for internal use in the Associated Type Family and combinators of MkCh and MkChans
-data EndNode
-data In (a :: Type)
-data Gen (a :: Type)
-data Out (a :: Type)
+data Eof
 
 inLabel :: Label "input"
 inLabel = Label
@@ -164,76 +161,57 @@ class MkCh (a :: Type) where
   type HChO a :: [Type]
   mkCh :: Proxy a -> IO (HList (HChI a), HList (HChO a))
 
-instance MkCh (In (ChanIn more)) => MkCh (In (ChanIn (a :<+> more))) where
-  type HChI (In (ChanIn (a :<+> more))) = WriteChannel a ': HChI (In (ChanIn more))
-  type HChO (In (ChanIn (a :<+> more))) = ReadChannel a ': HChO (In (ChanIn more))
+instance MkCh more => MkCh (a :<+> more) where
+  type HChI (a :<+> more) = WriteChannel a ': HChI more
+  type HChO (a :<+> more) = ReadChannel a ': HChO more
   mkCh _ = do 
     (i, o) <- newChannel @a 
-    (il, ol) <- mkCh (Proxy @(In (ChanIn more)))
+    (il, ol) <- mkCh (Proxy @more)
     return (i `HCons` il, o `HCons` ol)
 
-instance MkCh (Out a) where
-  type HChI (Out a) = '[]
-  type HChO (Out a) = '[]
-  mkCh _ = return (HNil, HNil)
-
-instance MkCh (Gen (ChanOutIn fromIn more)) => MkCh (Gen (ChanOutIn fromIn (a :<+> more))) where
-  type HChI (Gen (ChanOutIn fromIn (a :<+> more))) = WriteChannel a ': HChI (Gen (ChanOutIn fromIn more))
-  type HChO (Gen (ChanOutIn fromIn (a :<+> more))) = ReadChannel a ': HChO (Gen (ChanOutIn fromIn more))
-  mkCh _ = do 
-    (i, o) <- newChannel @a 
-    (il, ol) <- mkCh (Proxy @(Gen (ChanOutIn fromIn more)))
-    return (i `HCons` il, o `HCons` ol)
-
-instance MkCh (In (ChanIn EndNode)) where
-  type HChI (In (ChanIn EndNode)) = '[]
-  type HChO (In (ChanIn EndNode)) = '[]
-  mkCh _ = return (HNil, HNil) 
-
-instance MkCh (Gen (ChanOutIn fromIn EndNode)) where
-  type HChI (Gen (ChanOutIn fromIn EndNode)) = '[]
-  type HChO (Gen (ChanOutIn fromIn EndNode)) = '[]
+instance MkCh Eof where
+  type HChI Eof = '[]
+  type HChO Eof = '[]
   mkCh _ = return (HNil, HNil)
 
 type family ExpandInputToCh (a :: Type) :: [Type] where
-  ExpandInputToCh (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) = HChI (In (ChanIn (inToGen :<+> EndNode)))
+  ExpandInputToCh (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) = HChI inToGen
 
 type family ExpandGenToCh (a :: Type) (filter :: Type) :: [Type] where
-  ExpandGenToCh (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) filter = filter ': HAppendListR (HChO (In (ChanIn (inToGen :<+> EndNode)))) 
-                                                                                                                      (HChI (Gen (ChanOutIn inToGen (genToOut :<+> EndNode))))
+  ExpandGenToCh (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) filter = filter ': HAppendListR (HChO inToGen) 
+                                                                                                                      (HChI genToOut)
 
 type family ExpandFilterToCh (a :: Type) (param :: Type) :: [Type] where
-  ExpandFilterToCh (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) param = param ': HAppendListR (HChO (In (ChanIn (inToGen :<+> EndNode)))) 
-                                                                                                     (HChI (Gen (ChanOutIn inToGen (genToOut :<+> EndNode))))
+  ExpandFilterToCh (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) param = param ': HAppendListR (HChO inToGen) 
+                                                                                                                       (HChI genToOut)
 
 type family ExpandOutputToCh (a :: Type) :: [Type] where
-  ExpandOutputToCh (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) = HChO (Gen (ChanOutIn inToGen (genToOut :<+> EndNode)))
+  ExpandOutputToCh (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) = HChO genToOut
 
 class MkChans (a :: Type) where
   type HChan a :: [Type]
   mkChans :: Proxy a -> IO (Record (HChan a))
   
-instance ( MkCh (In (ChanIn (inToGen :<+> EndNode)))
-         , MkCh (Gen (ChanOutIn inToGen (genToOut :<+> EndNode)))
-         , MkCh (Out (ChanIn (genToOut :<+> EndNode))))
+instance ( MkCh inToGen
+         , MkCh genToOut)
     => MkChans (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) where
  
   type HChan (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) 
-    = '[ Tagged "input" (Record '[ Tagged "in-ch" (HList (HChI (In (ChanIn (inToGen :<+> EndNode)))))
-                                 , Tagged "out-ch" (HList (HChO (In (ChanIn (inToGen :<+> EndNode)))))
+    = '[ Tagged "input" (Record '[ Tagged "in-ch" (HList (HChI inToGen))
+                                 , Tagged "out-ch" (HList (HChO inToGen))
                                  ]
                         )
-       , Tagged "generator" (Record '[ Tagged "in-ch" (HList (HChI (Gen (ChanOutIn inToGen (genToOut :<+> EndNode)))))
-                                     , Tagged "out-ch" (HList (HChO (Gen (ChanOutIn inToGen (genToOut :<+> EndNode)))))
+       , Tagged "generator" (Record '[ Tagged "in-ch" (HList (HChI genToOut))
+                                     , Tagged "out-ch" (HList (HChO genToOut))
                                      ]
                             )
-       , Tagged "output" (Record '[ Tagged "in-ch" (HList (HChI (Out (ChanIn (genToOut :<+> EndNode)))))])
+       , Tagged "output" (Record '[ Tagged "in-ch" (HList (HChI genToOut))])
        ]
     
   mkChans _ =  do
-    (ii, io) <- mkCh (Proxy @(In (ChanIn (inToGen :<+> EndNode))))
-    (gi, go) <- mkCh (Proxy @(Gen (ChanOutIn inToGen (genToOut :<+> EndNode))))
-    (oi, _)  <- mkCh (Proxy @(Out (ChanIn (genToOut :<+> EndNode))))
+    (ii, io) <- mkCh (Proxy @inToGen)
+    (gi, go) <- mkCh (Proxy @genToOut)
+    (oi, _)  <- mkCh (Proxy @genToOut)
     return $ (inLabel .=. (inChLabel .=. ii .*. outChLabel .=. io .*. emptyRecord))
               .*. 
               (genLabel .=. (inChLabel .=. gi .*. outChLabel .=. go .*. emptyRecord))
