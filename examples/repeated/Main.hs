@@ -19,8 +19,9 @@ generator' =
 
 genAction :: Filter (Maybe Int) IO DPExample Int -> ReadChannel Int -> ReadChannel Int -> WriteChannel Int -> WriteChannel Int -> IO ()
 genAction filter' cin cin' cout cout' = do
-  (_, cin'') <- foldrS filter' cin cin'
-  forall cin'' (`push` cout')
+  others <- a cin cin' filter'
+  --(_, cin'') <- foldrS filter' cin cin'
+  forall (hHead others) (`push` cout')
   end cout
   end cout'
 
@@ -35,6 +36,7 @@ passElem _ _ rc2 _ wc2 = do
 
 actorRepeted :: Int -> ReadChannel Int -> ReadChannel Int -> WriteChannel Int -> WriteChannel Int -> StateT (Maybe Int) IO ()
 actorRepeted i rc _ wc _ = do 
+  modify (maybe (Just i) (Just . identity))
   liftIO $ do
     forall rc $ \e -> if e /= i then push e wc else pure ()
     end wc
@@ -44,8 +46,8 @@ actorRepeted i rc _ wc _ = do
 end wc
 -}
 
-a :: ReadChannel Int -> ReadChannel Int -> IO (HList '[ReadChannel Int])
-a cin cin' = spawnFilterWith cin (cin' `HCons` HNil) filterTemp (Just 1) (const True) (const $ pure ())
+a :: ReadChannel Int -> ReadChannel Int -> Filter (Maybe Int) IO DPExample Int -> IO (HList '[ReadChannel Int])
+a cin cin' filter' = spawnFilterWith cin (cin' `HCons` HNil) filter' Nothing (const True) (const $ pure ())
 
 foldrS :: Filter (Maybe Int) IO DPExample Int -> ReadChannel Int -> ReadChannel Int -> IO (ReadChannel Int, ReadChannel Int)
 foldrS = loop'
@@ -55,7 +57,6 @@ foldrS = loop'
   onElem filter' cin cin' elem' = do
     (newWrite, newRead) <- newChannel 
     (newWrite', newRead') <- newChannel 
-    --(newRead, _, hlist) <- splitedFilterChans elem' cin <$> makeChans @DPExample
     let hlist               = elem' `HCons` cin `HCons` cin' `HCons` newWrite `HCons` newWrite' `HCons` HNil
     void $ async (runFilter hlist filter' (Just elem'))
     return (newRead, newRead')
