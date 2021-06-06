@@ -44,8 +44,8 @@ actorRepeted i rc _ wc _ = do
 end wc
 -}
 
-a :: ReadChannel Int -> IO (HList '[])
-a cin = spawnFilterWith cin HNil filterTemp (1::Int) (const True) (const $ pure ())
+a :: ReadChannel Int -> ReadChannel Int -> IO (HList '[ReadChannel Int])
+a cin cin' = spawnFilterWith cin (cin' `HCons` HNil) filterTemp (Just 1) (const True) (const $ pure ())
 
 foldrS :: Filter (Maybe Int) IO DPExample Int -> ReadChannel Int -> ReadChannel Int -> IO (ReadChannel Int, ReadChannel Int)
 foldrS = loop'

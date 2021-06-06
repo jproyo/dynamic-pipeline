@@ -30,6 +30,8 @@ data ChanOut (a :: Type)
 data ChanOutIn (a :: Type) (b :: Type)
 data Channel (a :: Type)
 
+data ChansFilter (a :: Type)
+
 data ChanWriteInput (a :: Type)
 data ChanReadWriteGen (a :: Type)
 data ChanReadOut (a :: Type)
@@ -191,15 +193,15 @@ type ExpandFilterToCh a param = ExpandGenToCh a param
 type ExpandOutputToCh a = ExpandToHList (ChanReadOut a) Void
 
 class MkChans (a :: Type) where
-  type HChan a :: [Type]
-  mkChans :: Proxy a -> IO (Record (HChan a))
+  type HChan a :: Type
+  mkChans :: Proxy a -> IO (HChan a)
   
 instance ( MkCh inToGen
          , MkCh genToOut)
     => MkChans (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) where
  
   type HChan (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) 
-    = '[ Tagged "input" (Record '[ Tagged "in-ch" (HList (HChI inToGen))
+    = Record '[ Tagged "input" (Record '[ Tagged "in-ch" (HList (HChI inToGen))
                                  , Tagged "out-ch" (HList (HChO inToGen))
                                  ]
                         )
@@ -222,7 +224,20 @@ instance ( MkCh inToGen
               .*.
               emptyRecord
 
-makeChans :: forall (a :: Type). MkChans a => IO (Record (HChan a))
+instance MkCh inToGen
+    => MkChans (ChansFilter (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output)) where
+ 
+  type HChan (ChansFilter (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output))
+    = Record '[ Tagged "in-ch" (HList (HChO inToGen))
+              , Tagged "out-ch" (HList (HChI inToGen))
+              ]
+    
+  mkChans _ =  do
+    (writes', reads') <- mkCh (Proxy @inToGen)
+    return $ mkRecord (inChLabel .=. reads' `HCons` outChLabel .=. writes' `HCons` HNil)
+
+
+makeChans :: forall (a :: Type). MkChans a => IO (HChan a)
 makeChans = mkChans (Proxy @a)
 
 inputChans :: ( LabeledOpticF (LabelableTy r1) (Const t1)
@@ -389,7 +404,7 @@ data DynamicPipeline a s param = ValidDP (IsDP a) => DynamicPipeline
 
 runDP :: forall a s param filter r2 r3 l1 r4 l2 t2 s1 t1 s2 t5 l3 l4. 
                                   ( MkChans a
-                                  , Record (HChan a) ~ r3 t2
+                                  , HChan a ~ r3 t2
                                   , Filter s IO a param ~ filter
                                   , ArityRev (WithInput a IO) (HLength (ExpandInputToCh a))
                                   , ArityFwd (WithInput a IO) (HLength (ExpandInputToCh a))
@@ -486,108 +501,124 @@ pull = readChan (CC.threadDelay 100) . unRead
 --   R.mapM_ (`pushIn` s) (R.map R.encodeUtf8 $ R.lines bs) >> endIn s >> return s
 
 
--- spawnFilterWith :: forall a r3 t1 b s param n l2 r2 t2 r1 l1 s1 s2 t3 e. 
---                 ( MkChans a
---                 , Record (HChan a) ~ r3 t1
---                 , Splitted r1 e l1 r2 l2 r3 t1 s1 t2 s2 t3
---                 , WithFilter a param (StateT s IO) ~ (b -> ReadChannel b -> b)
---                 , HLength (ExpandGenToCh a param) ~ 'HSucc ('HSucc n)
---                 , ArityRev (WithFilter a param (StateT s IO)) n
---                 , ArityFwd (WithFilter a param (StateT s IO)) n
---                 , HasField "generator" (Record t1) (r2 t2)
---                 , ReadChannelFilterNot b a ~ l1
---                 , HMember (ReadChannel b) (ReadChansGen a) 'True)
---                 => ReadChannel b 
---                 -> HList (ReadChannelFilterNot b a)
---                 -> Filter s IO a param 
---                 -> s
---                 -> (b -> Bool)
---                 -> (b -> IO ())
---                 -> IO (HList (ReadChannelFilterNot b a))
+spawnFilterWith :: forall a b s param l r t l1 b0 l2 l3 b2 b3 l4. 
+                ( MkChans (ChansFilter a)
+                , FilterChans r (HList l3) t (HList (ReadChannel b : l1))
+                , l1 ~ l
+                , HAppendList l l3
+                , l4 ~ HAppendListR l l3
+                , l2 ~ (b ': ReadChannel b ': l4)
+                , HChan (ChansFilter a) ~ r t
+                , WithFilter a param (StateT s IO) ~ (b2 -> ReadChannel b2 -> b3)
+                , HLength (ExpandFilterToCh a param) ~ HLength l2
+                , HCurry' (HLength l2) (WithFilter a param (StateT s IO)) l2 (StateT s IO b0)
+                , ArityFwd (WithFilter a param (StateT s IO)) (HLength (ExpandFilterToCh a param))
+                , ArityRev b3 (HLength l4)
+                )
+                => ReadChannel b 
+                -> HList l
+                -> Filter s IO a param 
+                -> s
+                -> (b -> Bool)
+                -> (b -> IO ())
+                -> IO (HList l)
 spawnFilterWith cin restIns filter' initState spawnIf onElem = 
   loop filter' initState spawnIf onElem cin restIns
 
--- loop :: forall a b s param r1 l1 r2 l2 r3 t1 s1 t2 s2 t3 s3 s4 n f. 
---             ( GenChans r1 l1 r2 l2 r3 t1 s1 t2 s2 t3
---             , MkChans a, Record (HChan a) ~ r3 t1
---             , ArityRev (WithFilter a param (StateT s IO)) (HLength (ExpandGenToCh a b))
---             , ArityFwd (WithFilter a param (StateT s IO)) (HLength (ExpandGenToCh a b))
---             , HCurry' (HLength (ExpandGenToCh a b)) (WithFilter a param (StateT s IO)) (b ': ReadChannel b ': HAppendListR (ReadChannelFilterNot b a) l2) (StateT s IO b)
---             , WithFilter a param (StateT s IO) ~ (b -> ReadChannel b -> f)
---             , l1 ~ (ReadChannel b : ReadChannelFilterNot b a)
---             , HAppendList (ReadChannelFilterNot b a) l2
---             , HLength (ExpandGenToCh a b) ~ 'HSucc ('HSucc n)
---             , HMember (ReadChannel b) (ReadChansGen a) 'True)
---             => Filter s IO a param 
---             -> s
---             -> (b -> Bool)
---             -> (b -> IO ())
---             -> ReadChannel b 
---             -> HList (ReadChannelFilterNot b a)
---             -> IO (HList (ReadChannelFilterNot b a))
--- loop :: forall a r3 t1 b s param n l2 r2 t2 r1 l1 s1 s2 t3 e. 
---                 ( MkChans a
---                 , Record (HChan a) ~ r3 t1
---                 , Splitted r1 e l1 r2 l2 r3 t1 s1 t2 s2 t3
---                 , WithFilter a param (StateT s IO) ~ (b -> ReadChannel b -> b)
---                 , HLength (ExpandGenToCh a param) ~ 'HSucc ('HSucc n)
---                 , ArityRev (WithFilter a param (StateT s IO)) n
---                 , ArityFwd (WithFilter a param (StateT s IO)) n
---                 , HasField "generator" (Record t1) (r2 t2)
---                 , ReadChannelFilterNot b a ~ l1
---                 , HMember (ReadChannel b) (ReadChansGen a) 'True)
---                 => Filter s IO a param 
---                 -> s
---                 -> (b -> Bool)
---                 -> (b -> IO ())
---                 -> ReadChannel b 
---                 -> HList (ReadChannelFilterNot b a)
---                 -> IO (HList (ReadChannelFilterNot b a))
+loop :: forall a b s param l r t l1 b0 l2 l3 b2 b3 l4. 
+                ( MkChans (ChansFilter a)
+                , FilterChans r (HList l3) t (HList (ReadChannel b : l1))
+                , l1 ~ l
+                , HAppendList l l3
+                , l4 ~ HAppendListR l l3
+                , l2 ~ (b ': ReadChannel b ': l4)
+                , HChan (ChansFilter a) ~ r t
+                , WithFilter a param (StateT s IO) ~ (b2 -> ReadChannel b2 -> b3)
+                , HLength (ExpandFilterToCh a param) ~ HLength l2
+                , HCurry' (HLength l2) (WithFilter a param (StateT s IO)) l2 (StateT s IO b0)
+                , ArityFwd (WithFilter a param (StateT s IO)) (HLength (ExpandFilterToCh a param))
+                , ArityRev b3 (HLength l4)
+                )
+                => Filter s IO a param 
+                -> s
+                -> (b -> Bool)
+                -> (b -> IO ())
+                -> ReadChannel b 
+                -> HList l
+                -> IO (HList l)
 loop filter'' initState' spawnIf' onElem' cin' restIns' = 
   maybe (pure restIns') (whenNewElem cin' restIns' filter'' initState' spawnIf' onElem') 
   =<< pull cin'
 
--- whenNewElem :: forall a r3 t1 b s param n l2 r2 t2 r1 l1 s1 s2 t3 e. 
---                 ( MkChans a
---                 , Record (HChan a) ~ r3 t1
---                 , Splitted r1 e l1 r2 l2 r3 t1 s1 t2 s2 t3
---                 , WithFilter a param (StateT s IO) ~ (b -> ReadChannel b -> b)
---                 , HLength (ExpandGenToCh a param) ~ 'HSucc ('HSucc n)
---                 , ArityRev (WithFilter a param (StateT s IO)) n
---                 , ArityFwd (WithFilter a param (StateT s IO)) n
---                 , HasField "generator" (Record t1) (r2 t2)
---                 , ReadChannelFilterNot b a ~ l1
---                 , HMember (ReadChannel b) (ReadChansGen a) 'True)
---                 => ReadChannel b 
---                 -> HList (ReadChannelFilterNot b a)
---                 -> Filter s IO a param 
---                 -> s
---                 -> (b -> Bool)
---                 -> (b -> IO ())
---                 -> b
---                 -> IO (HList (ReadChannelFilterNot b a))
+whenNewElem :: forall a b s param l r t l1 b0 l2 l3 b2 b3 l4. 
+                ( MkChans (ChansFilter a)
+                , FilterChans r (HList l3) t (HList (ReadChannel b : l1))
+                , l1 ~ l
+                , HAppendList l l3
+                , l4 ~ HAppendListR l l3
+                , l2 ~ (b ': ReadChannel b ': l4)
+                , HChan (ChansFilter a) ~ r t
+                , WithFilter a param (StateT s IO) ~ (b2 -> ReadChannel b2 -> b3)
+                , HLength (ExpandFilterToCh a param) ~ HLength l2
+                , HCurry' (HLength l2) (WithFilter a param (StateT s IO)) l2 (StateT s IO b0)
+                , ArityFwd (WithFilter a param (StateT s IO)) (HLength (ExpandFilterToCh a param))
+                , ArityRev b3 (HLength l4)
+                )
+                => ReadChannel b 
+                -> HList l
+                -> Filter s IO a param 
+                -> s
+                -> (b -> Bool)
+                -> (b -> IO ())
+                -> b
+                -> IO (HList l)
 whenNewElem cin' restIns' filter'' initState' spawnIf' onElem' = 
   uncurry (loop filter'' initState' spawnIf' onElem') <=< doOnElem cin' restIns' filter'' initState' spawnIf' onElem'
 
--- doOnElem :: forall a r3 t1 b s param n l2 r2 t2 r1 l1 s1 s2 t3 e. 
---                 ( MkChans a
---                 , Record (HChan a) ~ r3 t1
---                 , Splitted r1 e l1 r2 l2 r3 t1 s1 t2 s2 t3
---                 , ReadChannelFilterNot b a ~ l1)
---                 => ReadChannel b 
---                 -> HList (ReadChannelFilterNot b a)
---                 -> Filter s IO a param 
---                 -> s
---                 -> (b -> Bool)
---                 -> (b -> IO ())
---                 -> b
---                 -> IO (ReadChannel b, HList (ReadChannelFilterNot b a))
-doOnElem cin' restIns' _ _ spanwIf' onElem' elem' = do
+doOnElem :: forall a b s param l r t l1 b0 l2 l3 b2 b3 l4. 
+                ( MkChans (ChansFilter a)
+                , FilterChans r (HList l3) t (HList (ReadChannel b : l1))
+                , l1 ~ l
+                , HAppendList l l3
+                , l4 ~ HAppendListR l l3
+                , l2 ~ (b ': ReadChannel b ': l4)
+                , HChan (ChansFilter a) ~ r t
+                , WithFilter a param (StateT s IO) ~ (b2 -> ReadChannel b2 -> b3)
+                , HLength (ExpandFilterToCh a param) ~ HLength l2
+                , HCurry' (HLength l2) (WithFilter a param (StateT s IO)) l2 (StateT s IO b0)
+                , ArityFwd (WithFilter a param (StateT s IO)) (HLength (ExpandFilterToCh a param))
+                , ArityRev b3 (HLength l4)
+                )
+                => ReadChannel b 
+                -> HList l
+                -> Filter s IO a param 
+                -> s
+                -> (b -> Bool)
+                -> (b -> IO ())
+                -> b
+                -> IO (ReadChannel b, HList l1)
+doOnElem cin' restIns' filter'' initState' spanwIf' onElem' elem' = do
   onElem' elem'
   if spanwIf' elem' 
     then do 
-      return (cin', restIns')
-      --(newCin', newRestIns , _) <- splitedFilterChans elem' cin' <$> makeChans @a
-      -- void $ async (runFilter hlist filter'' initState')
-      --return (newCin', newRestIns) 
+      (reads', writes' :: HList l3) <- getFilterChannels <$> makeChans @(ChansFilter a)
+      let hlist = elem' `HCons` cin' `HCons` (restIns' `hAppendList` writes')
+      void $ async (runFilter hlist filter'' initState')
+      return (hHead reads', hTail reads')
     else return (cin', restIns')
+
+type FilterChans r b t a = (LabeledOpticF (LabelableTy r) (Const b),
+                      LabeledOpticTo (LabelableTy r) "out-ch" (->),
+                      Labelable "out-ch" r t t b b,
+                      LabeledOpticF (LabelableTy r) (Const a),
+                      LabeledOpticP (LabelableTy r) (->),
+                      LabeledOpticTo (LabelableTy r) "in-ch" (->),
+                      Labelable "in-ch" r t t a a)
+
+getFilterChannels :: FilterChans r b t a => r t -> (a, b)
+getFilterChannels ch = 
+   let inch = hLens' inChLabel
+       outch = hLens' outChLabel
+       reads' = ch^.inch 
+       writes' = ch^.outch 
+    in (reads', writes')
