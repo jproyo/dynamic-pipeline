@@ -30,10 +30,15 @@ data ChanOut (a :: Type)
 data ChanOutIn (a :: Type) (b :: Type)
 data Channel (a :: Type)
 
+data ChanWriteInput (a :: Type)
+data ChanReadWriteGen (a :: Type)
+data ChanReadOut (a :: Type)
+
 data Input (a :: Type)
 data Generator (a :: Type)
 data Output
 
+data Eof
 
 type family And (a :: Bool) (b :: Bool) :: Bool where
   And 'True 'True = 'True
@@ -138,8 +143,6 @@ type family WithOutput (a :: Type) (m :: Type -> Type) :: Type where
                                                   )
 
 -- Type encoding for Building Chans. Only for internal use in the Associated Type Family and combinators of MkCh and MkChans
-data Eof
-
 inLabel :: Label "input"
 inLabel = Label
 
@@ -174,19 +177,18 @@ instance MkCh Eof where
   type HChO Eof = '[]
   mkCh _ = return (HNil, HNil)
 
-type family ExpandInputToCh (a :: Type) :: [Type] where
-  ExpandInputToCh (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) = HChI inToGen
+type family ExpandToHList (a :: Type) (param :: Type) :: [Type]
+type instance ExpandToHList (ChanWriteInput (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output)) _ = 
+  HChI inToGen
+type instance ExpandToHList (ChanReadWriteGen (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output)) filter = 
+  filter ': HAppendListR (HChO inToGen) (HChI genToOut)
+type instance ExpandToHList (ChanReadOut (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output)) filter = 
+  HChO genToOut
 
-type family ExpandGenToCh (a :: Type) (filter :: Type) :: [Type] where
-  ExpandGenToCh (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) filter = filter ': HAppendListR (HChO inToGen) 
-                                                                                                                      (HChI genToOut)
-
-type family ExpandFilterToCh (a :: Type) (param :: Type) :: [Type] where
-  ExpandFilterToCh (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) param = param ': HAppendListR (HChO inToGen) 
-                                                                                                                       (HChI genToOut)
-
-type family ExpandOutputToCh (a :: Type) :: [Type] where
-  ExpandOutputToCh (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) = HChO genToOut
+type ExpandInputToCh a = ExpandToHList (ChanWriteInput a) Void
+type ExpandGenToCh a filter = ExpandToHList (ChanReadWriteGen a) filter
+type ExpandFilterToCh a param = ExpandGenToCh a param
+type ExpandOutputToCh a = ExpandToHList (ChanReadOut a) Void
 
 class MkChans (a :: Type) where
   type HChan a :: [Type]
@@ -413,9 +415,9 @@ mkDP = DynamicPipeline @a
 
 {-# INLINE forall #-}
 forall :: ReadChannel a -> (a -> IO ()) -> IO ()
-forall = loop
+forall = loop'
   where 
-    loop c io = maybe (pure ()) (\e -> io e >> loop c io) =<< pull c
+    loop' c io = maybe (pure ()) (\e -> io e >> loop' c io) =<< pull c
 
 {-# NOINLINE newChannel #-}
 newChannel :: forall a. IO (WriteChannel a, ReadChannel a)
