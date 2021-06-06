@@ -501,6 +501,30 @@ pull = readChan (CC.threadDelay 100) . unRead
 --   R.mapM_ (`pushIn` s) (R.map R.encodeUtf8 $ R.lines bs) >> endIn s >> return s
 
 
+spawnFilterForAll :: forall a b s param l r t l1 b0 l2 l3 b2 b3 l4. 
+                ( MkChans (ChansFilter a)
+                , FilterChans r (HList l3) t (HList (ReadChannel b : l1))
+                , l1 ~ l
+                , HAppendList l l3
+                , l4 ~ HAppendListR l l3
+                , l2 ~ (b ': ReadChannel b ': l4)
+                , HChan (ChansFilter a) ~ r t
+                , WithFilter a param (StateT s IO) ~ (b2 -> ReadChannel b2 -> b3)
+                , HLength (ExpandFilterToCh a param) ~ HLength l2
+                , HCurry' (HLength l2) (WithFilter a param (StateT s IO)) l2 (StateT s IO b0)
+                , ArityFwd (WithFilter a param (StateT s IO)) (HLength (ExpandFilterToCh a param))
+                , ArityRev b3 (HLength l4)
+                )
+                => ReadChannel b 
+                -> HList l
+                -> Filter s IO a param 
+                -> (b -> s)
+                -> (b -> IO ())
+                -> IO (HList l)
+spawnFilterForAll cin restIns filter' initState = 
+  spawnFilterWith cin restIns filter' initState (const True)
+
+
 spawnFilterWith :: forall a b s param l r t l1 b0 l2 l3 b2 b3 l4. 
                 ( MkChans (ChansFilter a)
                 , FilterChans r (HList l3) t (HList (ReadChannel b : l1))
@@ -518,14 +542,14 @@ spawnFilterWith :: forall a b s param l r t l1 b0 l2 l3 b2 b3 l4.
                 => ReadChannel b 
                 -> HList l
                 -> Filter s IO a param 
-                -> s
+                -> (b -> s)
                 -> (b -> Bool)
                 -> (b -> IO ())
                 -> IO (HList l)
 spawnFilterWith cin restIns filter' initState spawnIf onElem = 
-  loop filter' initState spawnIf onElem cin restIns
+  loopSpawn filter' initState spawnIf onElem cin restIns
 
-loop :: forall a b s param l r t l1 b0 l2 l3 b2 b3 l4. 
+loopSpawn :: forall a b s param l r t l1 b0 l2 l3 b2 b3 l4. 
                 ( MkChans (ChansFilter a)
                 , FilterChans r (HList l3) t (HList (ReadChannel b : l1))
                 , l1 ~ l
@@ -540,13 +564,13 @@ loop :: forall a b s param l r t l1 b0 l2 l3 b2 b3 l4.
                 , ArityRev b3 (HLength l4)
                 )
                 => Filter s IO a param 
-                -> s
+                -> (b -> s)
                 -> (b -> Bool)
                 -> (b -> IO ())
                 -> ReadChannel b 
                 -> HList l
                 -> IO (HList l)
-loop filter'' initState' spawnIf' onElem' cin' restIns' = 
+loopSpawn filter'' initState' spawnIf' onElem' cin' restIns' = 
   maybe (pure restIns') (whenNewElem cin' restIns' filter'' initState' spawnIf' onElem') 
   =<< pull cin'
 
@@ -567,13 +591,13 @@ whenNewElem :: forall a b s param l r t l1 b0 l2 l3 b2 b3 l4.
                 => ReadChannel b 
                 -> HList l
                 -> Filter s IO a param 
-                -> s
+                -> (b -> s)
                 -> (b -> Bool)
                 -> (b -> IO ())
                 -> b
                 -> IO (HList l)
 whenNewElem cin' restIns' filter'' initState' spawnIf' onElem' = 
-  uncurry (loop filter'' initState' spawnIf' onElem') <=< doOnElem cin' restIns' filter'' initState' spawnIf' onElem'
+  uncurry (loopSpawn filter'' initState' spawnIf' onElem') <=< doOnElem cin' restIns' filter'' initState' spawnIf' onElem'
 
 doOnElem :: forall a b s param l r t l1 b0 l2 l3 b2 b3 l4. 
                 ( MkChans (ChansFilter a)
@@ -592,7 +616,7 @@ doOnElem :: forall a b s param l r t l1 b0 l2 l3 b2 b3 l4.
                 => ReadChannel b 
                 -> HList l
                 -> Filter s IO a param 
-                -> s
+                -> (b -> s)
                 -> (b -> Bool)
                 -> (b -> IO ())
                 -> b
@@ -603,7 +627,7 @@ doOnElem cin' restIns' filter'' initState' spanwIf' onElem' elem' = do
     then do 
       (reads', writes' :: HList l3) <- getFilterChannels <$> makeChans @(ChansFilter a)
       let hlist = elem' `HCons` cin' `HCons` (restIns' `hAppendList` writes')
-      void $ async (runFilter hlist filter'' initState')
+      void $ async (runFilter hlist filter'' (initState' elem'))
       return (hHead reads', hTail reads')
     else return (cin', restIns')
 
