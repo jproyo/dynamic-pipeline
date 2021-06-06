@@ -1,18 +1,18 @@
-{-# LANGUAGE AllowAmbiguousTypes #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE AllowAmbiguousTypes     #-}
+{-# LANGUAGE UndecidableInstances    #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
 {-# OPTIONS_GHC -Wno-unused-foralls #-}
 module DP.Internal where
 
-import qualified Control.Concurrent            as CC
-import Control.Concurrent.Async
-import Control.Concurrent.Chan.Unagi.NoBlocking                                                      
-import Relude as R
-import GHC.TypeLits
-import Data.List.NonEmpty
-import Data.HList
-import Data.HList.Labelable
-import Control.Lens hiding ((<|))
+import qualified Control.Concurrent                       as CC
+import           Control.Concurrent.Async
+import           Control.Concurrent.Chan.Unagi.NoBlocking
+import           Control.Lens                             hiding ((<|))
+import           Data.HList
+import           Data.HList.Labelable
+import           Data.List.NonEmpty
+import           GHC.TypeLits
+import           Relude                                   as R
 
 newtype WriteChannel a = WriteChannel { unWrite :: InChan (Maybe a) }
 newtype ReadChannel a = ReadChannel { unRead :: OutChan (Maybe a) }
@@ -29,7 +29,6 @@ data ChanIn (a :: Type)
 data ChanOut (a :: Type)
 data ChanOutIn (a :: Type) (b :: Type)
 data Channel (a :: Type)
-
 data ChansFilter (a :: Type)
 
 data ChanWriteInput (a :: Type)
@@ -39,14 +38,15 @@ data ChanReadOut (a :: Type)
 data Input (a :: Type)
 data Generator (a :: Type)
 data Output
-
 data Eof
 
 type family And (a :: Bool) (b :: Bool) :: Bool where
   And 'True 'True = 'True
   And a b         = 'False
 
+
 type family IsDP (a :: k) :: Bool where
+
   IsDP (Input (Channel inToGen)
         :>> Generator (Channel genToOut)
         :>> Output)
@@ -71,12 +71,11 @@ type family ValidDP (a :: Bool) :: Constraint where
 
 -- Inductive Type Family
 type family WithInput (a :: Type) (m :: Type -> Type) :: Type where
-  WithInput (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) m                         
-                                             = WithInput (ChanIn inToGen) m
+  WithInput (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) m = WithInput (ChanIn inToGen) m
   WithInput (ChanIn (a :<+> more)) m         = WriteChannel a -> WithInput (ChanIn more) m
   WithInput (ChanIn Eof) m                   = m ()
   WithInput (ChanOutIn (a :<+> more) ins) m  = ReadChannel a -> WithInput (ChanOutIn more ins) m
-  WithInput (ChanOutIn Eof ins) m            = WithInput (ChanIn ins) m 
+  WithInput (ChanOutIn Eof ins) m            = WithInput (ChanIn ins) m
   WithInput a _                              = TypeError
                                                   ( 'Text "Invalid Semantic for Building DP Program"
                                                     ':$$: 'Text "in the type '"
@@ -90,12 +89,11 @@ type family WithInput (a :: Type) (m :: Type -> Type) :: Type where
                                                   )
 
 type family WithGenerator (a :: Type) (filter :: Type) (m :: Type -> Type) :: Type where
-  WithGenerator (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) filter m                         
-                                                        = filter -> WithGenerator (ChanOutIn inToGen genToOut) filter m
+  WithGenerator (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) filter m = filter -> WithGenerator (ChanOutIn inToGen genToOut) filter m
   WithGenerator (ChanIn (a :<+> more)) filter m         = WriteChannel a -> WithGenerator (ChanIn more) filter m
   WithGenerator (ChanIn Eof) filter m                   = m ()
   WithGenerator (ChanOutIn (a :<+> more) ins) filter m  = ReadChannel a -> WithGenerator (ChanOutIn more ins) filter m
-  WithGenerator (ChanOutIn Eof ins) filter m            = WithGenerator (ChanIn ins) filter m 
+  WithGenerator (ChanOutIn Eof ins) filter m            = WithGenerator (ChanIn ins) filter m
   WithGenerator a _ _                                   = TypeError
                                                             ( 'Text "Invalid Semantic for Building DP Program"
                                                               ':$$: 'Text "in the type '"
@@ -109,12 +107,12 @@ type family WithGenerator (a :: Type) (filter :: Type) (m :: Type -> Type) :: Ty
                                                             )
 
 type family WithFilter (a :: Type) (param :: Type) (m :: Type -> Type) :: Type where
-  WithFilter (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) param m                         
+  WithFilter (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) param m
                                                     = param -> WithFilter (ChanOutIn inToGen genToOut) param m
   WithFilter (ChanIn (a :<+> more)) param m         = WriteChannel a -> WithFilter (ChanIn more) param m
   WithFilter (ChanIn Eof) param m                   = m ()
   WithFilter (ChanOutIn (a :<+> more) ins) param m  = ReadChannel a -> WithFilter (ChanOutIn more ins) param m
-  WithFilter (ChanOutIn Eof ins) param m            = WithFilter (ChanIn ins) param m 
+  WithFilter (ChanOutIn Eof ins) param m            = WithFilter (ChanIn ins) param m
   WithFilter a _ _                                  = TypeError
                                                 ( 'Text "Invalid Semantic for Building DP Program"
                                                   ':$$: 'Text "in the type '"
@@ -128,11 +126,11 @@ type family WithFilter (a :: Type) (param :: Type) (m :: Type -> Type) :: Type w
                                                 )
 
 type family WithOutput (a :: Type) (m :: Type -> Type) :: Type where
-  WithOutput (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) m                         
+  WithOutput (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) m
                                                = WithOutput (ChanOut genToOut) m
   WithOutput (ChanOut (a :<+> more)) m         = ReadChannel a -> WithOutput (ChanOut more) m
   WithOutput (ChanOut Eof) m                   = m ()
-  WithOutput a _                              = TypeError
+  WithOutput a _                               = TypeError
                                                   ( 'Text "Invalid Semantic for Building DP Program"
                                                     ':$$: 'Text "in the type '"
                                                     ':<>: 'ShowType a
@@ -169,8 +167,8 @@ class MkCh (a :: Type) where
 instance MkCh more => MkCh (a :<+> more) where
   type HChI (a :<+> more) = WriteChannel a ': HChI more
   type HChO (a :<+> more) = ReadChannel a ': HChO more
-  mkCh _ = do 
-    (i, o) <- newChannel @a 
+  mkCh _ = do
+    (i, o) <- newChannel @a
     (il, ol) <- mkCh (Proxy @more)
     return (i `HCons` il, o `HCons` ol)
 
@@ -180,12 +178,20 @@ instance MkCh Eof where
   mkCh _ = return (HNil, HNil)
 
 type family ExpandToHList (a :: Type) (param :: Type) :: [Type]
-type instance ExpandToHList (ChanWriteInput (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output)) _ = 
-  HChI inToGen
-type instance ExpandToHList (ChanReadWriteGen (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output)) filter = 
-  filter ': HAppendListR (HChO inToGen) (HChI genToOut)
-type instance ExpandToHList (ChanReadOut (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output)) filter = 
-  HChO genToOut
+type instance ExpandToHList (ChanWriteInput ( Input (Channel inToGen)
+                                          :>> Generator (Channel genToOut)
+                                          :>> Output )
+                            ) _ = HChI inToGen
+
+type instance ExpandToHList (ChanReadWriteGen ( Input (Channel inToGen)
+                                            :>> Generator (Channel genToOut)
+                                            :>> Output)
+                            ) filter = filter ': HAppendListR (HChO inToGen) (HChI genToOut)
+
+type instance ExpandToHList (ChanReadOut ( Input (Channel inToGen)
+                                       :>> Generator (Channel genToOut)
+                                       :>> Output )
+                            ) filter = HChO genToOut
 
 type ExpandInputToCh a = ExpandToHList (ChanWriteInput a) Void
 type ExpandGenToCh a filter = ExpandToHList (ChanReadWriteGen a) filter
@@ -195,12 +201,12 @@ type ExpandOutputToCh a = ExpandToHList (ChanReadOut a) Void
 class MkChans (a :: Type) where
   type HChan a :: Type
   mkChans :: Proxy a -> IO (HChan a)
-  
+
 instance ( MkCh inToGen
          , MkCh genToOut)
     => MkChans (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) where
- 
-  type HChan (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) 
+
+  type HChan (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output)
     = Record '[ Tagged "input" (Record '[ Tagged "in-ch" (HList (HChI inToGen))
                                  , Tagged "out-ch" (HList (HChO inToGen))
                                  ]
@@ -211,27 +217,27 @@ instance ( MkCh inToGen
                             )
        , Tagged "output" (Record '[ Tagged "in-ch" (HList (HChI genToOut))])
        ]
-    
+
   mkChans _ =  do
     (ii, io) <- mkCh (Proxy @inToGen)
     (gi, go) <- mkCh (Proxy @genToOut)
     (oi, _)  <- mkCh (Proxy @genToOut)
     return $ (inLabel .=. (inChLabel .=. ii .*. outChLabel .=. io .*. emptyRecord))
-              .*. 
+              .*.
               (genLabel .=. (inChLabel .=. gi .*. outChLabel .=. go .*. emptyRecord))
-              .*. 
+              .*.
               (outLabel .=. (inChLabel .=. oi .*. emptyRecord))
               .*.
               emptyRecord
 
 instance MkCh inToGen
     => MkChans (ChansFilter (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output)) where
- 
+
   type HChan (ChansFilter (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output))
     = Record '[ Tagged "in-ch" (HList (HChO inToGen))
               , Tagged "out-ch" (HList (HChI inToGen))
               ]
-    
+
   mkChans _ =  do
     (writes', reads') <- mkCh (Proxy @inToGen)
     return $ mkRecord (inChLabel .=. reads' `HCons` outChLabel .=. writes' `HCons` HNil)
@@ -247,7 +253,7 @@ inputChans :: ( LabeledOpticF (LabelableTy r1) (Const t1)
               , LabeledOpticP (LabelableTy r2) (->)
               , LabeledOpticTo (LabelableTy r2) "input" (->)
               , Labelable "in-ch" r1 s t2 t1 t1
-              , Labelable "input" r2 t3 t3 (r1 s) (r1 t2)) 
+              , Labelable "input" r2 t3 t3 (r1 s) (r1 t2))
            => r2 t3 -> t1
 inputChans = let inl  = hLens' inLabel
                  inch = hLens' inChLabel
@@ -269,7 +275,7 @@ generatorChans :: ( LabeledOpticF (LabelableTy r1) (Const (HList l1))
                   , Labelable "generator" r3 t1 t1 (r2 s1) (r2 t2)
                   , Labelable "in-ch" r2 s1 t2 (HList l2) (HList l2)
                   , Labelable "input" r3 t1 t1 (r1 s2) (r1 t3)
-                  , Labelable "out-ch" r1 s2 t3 (HList l1) (HList l1)) 
+                  , Labelable "out-ch" r1 s2 t3 (HList l1) (HList l1))
                => r3 t1 -> HList (HAppendListR l1 l2)
 generatorChans ch = let inl  = hLens' inLabel
                         genl  = hLens' genLabel
@@ -286,7 +292,7 @@ outputChans :: ( LabeledOpticF (LabelableTy r1) (Const t1)
                , LabeledOpticP (LabelableTy r2) (->)
                , LabeledOpticTo (LabelableTy r2) "generator" (->)
                , Labelable "generator" r2 t2 t2 (r1 s) (r1 t3)
-               , Labelable "out-ch" r1 s t3 t1 t1) 
+               , Labelable "out-ch" r1 s t3 t1 t1)
             => r2 t2 -> t1
 outputChans = let genl  = hLens' genLabel
                   outch = hLens' outChLabel
@@ -342,7 +348,7 @@ runStage = hUncurry
 runStage' :: HCurry' n f xs r => Proxy n -> f -> HList xs -> r
 runStage' = hUncurry'
 
-data GeneratorStage s m a param = GeneratorStage 
+data GeneratorStage s m a param = GeneratorStage
   { _gsGenerator      :: Stage (WithGenerator a (Filter s m a param) m)
   , _gsFilterTemplate :: Filter s m a param
   }
@@ -361,7 +367,7 @@ mkFilter :: forall s m a param. WithFilter a param (StateT s m) -> Filter s m a 
 mkFilter = Filter . single
 
 single :: forall s m a param. WithFilter a param (StateT s m) -> NonEmpty (Actor s (StateT s m) a param)
-single = one . actor 
+single = one . actor
 
 actor :: forall s m a param. WithFilter a param m -> Actor s m a param
 actor = Actor . mkStage' @(WithFilter a param m)
@@ -383,9 +389,9 @@ runActor ac = runStage . run $ unActor ac
 runFilter :: ( ArityRev (WithFilter a param (StateT s1 m1)) (HLength (ExpandFilterToCh a param))
              , ArityFwd (WithFilter a param (StateT s1 m1)) (HLength (ExpandFilterToCh a param))
              , HCurry' (HLength (ExpandFilterToCh a param)) (WithFilter a param (StateT s1 m1)) xs (StateT s2 m2 b)
-             , Monad m2, Monad m1) 
+             , Monad m2, Monad m1)
            => HList xs -> Filter s1 m1 a param -> s2 -> m2 ()
-runFilter clist f s = flip evalStateT s . mapM_ (`runActor` clist) . unFilter $ f 
+runFilter clist f s = flip evalStateT s . mapM_ (`runActor` clist) . unFilter $ f
 
 withInput :: forall (a :: Type) (m :: Type -> Type). WithInput a m -> Stage (WithInput a m)
 withInput = mkStage' @(WithInput a m)
@@ -396,13 +402,13 @@ withGenerator = mkStage' @(WithGenerator a filter m)
 withOutput :: forall (a :: Type) (m :: Type -> Type). WithOutput a m -> Stage (WithOutput a m)
 withOutput = mkStage' @(WithOutput a m)
 
-data DynamicPipeline a s param = ValidDP (IsDP a) => DynamicPipeline 
+data DynamicPipeline a s param = ValidDP (IsDP a) => DynamicPipeline
   { input     :: Stage (WithInput a IO)
-  , generator :: GeneratorStage s IO a param 
+  , generator :: GeneratorStage s IO a param
   , output    :: Stage (WithOutput a IO)
   }
 
-runDP :: forall a s param filter r2 r3 l1 r4 l2 t2 s1 t1 s2 t5 l3 l4. 
+runDP :: forall a s param filter r2 r3 l1 r4 l2 t2 s1 t1 s2 t5 l3 l4.
                                   ( MkChans a
                                   , HChan a ~ r3 t2
                                   , Filter s IO a param ~ filter
@@ -422,7 +428,7 @@ runDP DynamicPipeline{..} = do
   let genWithFilter      = _gsFilterTemplate generator `HCons` cGen
   _ <- async (runStage (run input) cIns)
   _ <- async (runStage @(HLength (ExpandGenToCh a filter)) @(WithGenerator a filter IO) (run (_gsGenerator generator)) genWithFilter)
-  oa <- async (runStage (run output) cOut) 
+  oa <- async (runStage (run output) cOut)
   wait oa
 
 mkDP :: forall a s param. ValidDP (IsDP a) => Stage (WithInput a IO) -> GeneratorStage s IO a param -> Stage (WithOutput a IO) -> DynamicPipeline a s param
@@ -431,7 +437,7 @@ mkDP = DynamicPipeline @a
 {-# INLINE forall #-}
 forall :: ReadChannel a -> (a -> IO ()) -> IO ()
 forall = loop'
-  where 
+  where
     loop' c io = maybe (pure ()) (\e -> io e >> loop' c io) =<< pull c
 
 {-# NOINLINE newChannel #-}
@@ -444,7 +450,7 @@ end = flip writeChan Nothing . unWrite
 
 {-# INLINE push #-}
 push :: a -> WriteChannel a -> IO ()
-push a c = writeChan (unWrite c) (Just a) 
+push a c = writeChan (unWrite c) (Just a)
 
 {-# INLINE pull #-}
 pull :: ReadChannel a -> IO (Maybe a)
@@ -501,7 +507,7 @@ pull = readChan (CC.threadDelay 100) . unRead
 --   R.mapM_ (`pushIn` s) (R.map R.encodeUtf8 $ R.lines bs) >> endIn s >> return s
 
 
-spawnFilterForAll :: forall a b s param l r t l1 b0 l2 l3 b2 b3 l4. 
+spawnFilterForAll :: forall a b s param l r t l1 b0 l2 l3 b2 b3 l4.
                 ( MkChans (ChansFilter a)
                 , FilterChans r (HList l3) t (HList (ReadChannel b : l1))
                 , l1 ~ l
@@ -515,17 +521,15 @@ spawnFilterForAll :: forall a b s param l r t l1 b0 l2 l3 b2 b3 l4.
                 , ArityFwd (WithFilter a param (StateT s IO)) (HLength (ExpandFilterToCh a param))
                 , ArityRev b3 (HLength l4)
                 )
-                => ReadChannel b 
-                -> HList l
-                -> Filter s IO a param 
+                => Filter s IO a param
                 -> (b -> s)
                 -> (b -> IO ())
+                -> ReadChannel b
+                -> HList l
                 -> IO (HList l)
-spawnFilterForAll cin restIns filter' initState = 
-  spawnFilterWith cin restIns filter' initState (const True)
+spawnFilterForAll filter' initState = spawnFilterWith filter' initState (const True)
 
-
-spawnFilterWith :: forall a b s param l r t l1 b0 l2 l3 b2 b3 l4. 
+spawnFilterWith :: forall a b s param l r t l1 b0 l2 l3 b2 b3 l4.
                 ( MkChans (ChansFilter a)
                 , FilterChans r (HList l3) t (HList (ReadChannel b : l1))
                 , l1 ~ l
@@ -539,110 +543,46 @@ spawnFilterWith :: forall a b s param l r t l1 b0 l2 l3 b2 b3 l4.
                 , ArityFwd (WithFilter a param (StateT s IO)) (HLength (ExpandFilterToCh a param))
                 , ArityRev b3 (HLength l4)
                 )
-                => ReadChannel b 
-                -> HList l
-                -> Filter s IO a param 
+                => Filter s IO a param
                 -> (b -> s)
                 -> (b -> Bool)
                 -> (b -> IO ())
-                -> IO (HList l)
-spawnFilterWith cin restIns filter' initState spawnIf onElem = 
-  loopSpawn filter' initState spawnIf onElem cin restIns
-
-loopSpawn :: forall a b s param l r t l1 b0 l2 l3 b2 b3 l4. 
-                ( MkChans (ChansFilter a)
-                , FilterChans r (HList l3) t (HList (ReadChannel b : l1))
-                , l1 ~ l
-                , HAppendList l l3
-                , l4 ~ HAppendListR l l3
-                , l2 ~ (b ': ReadChannel b ': l4)
-                , HChan (ChansFilter a) ~ r t
-                , WithFilter a param (StateT s IO) ~ (b2 -> ReadChannel b2 -> b3)
-                , HLength (ExpandFilterToCh a param) ~ HLength l2
-                , HCurry' (HLength l2) (WithFilter a param (StateT s IO)) l2 (StateT s IO b0)
-                , ArityFwd (WithFilter a param (StateT s IO)) (HLength (ExpandFilterToCh a param))
-                , ArityRev b3 (HLength l4)
-                )
-                => Filter s IO a param 
-                -> (b -> s)
-                -> (b -> Bool)
-                -> (b -> IO ())
-                -> ReadChannel b 
+                -> ReadChannel b
                 -> HList l
                 -> IO (HList l)
-loopSpawn filter'' initState' spawnIf' onElem' cin' restIns' = 
-  maybe (pure restIns') (whenNewElem cin' restIns' filter'' initState' spawnIf' onElem') 
-  =<< pull cin'
+spawnFilterWith = loopSpawn
 
-whenNewElem :: forall a b s param l r t l1 b0 l2 l3 b2 b3 l4. 
-                ( MkChans (ChansFilter a)
-                , FilterChans r (HList l3) t (HList (ReadChannel b : l1))
-                , l1 ~ l
-                , HAppendList l l3
-                , l4 ~ HAppendListR l l3
-                , l2 ~ (b ': ReadChannel b ': l4)
-                , HChan (ChansFilter a) ~ r t
-                , WithFilter a param (StateT s IO) ~ (b2 -> ReadChannel b2 -> b3)
-                , HLength (ExpandFilterToCh a param) ~ HLength l2
-                , HCurry' (HLength l2) (WithFilter a param (StateT s IO)) l2 (StateT s IO b0)
-                , ArityFwd (WithFilter a param (StateT s IO)) (HLength (ExpandFilterToCh a param))
-                , ArityRev b3 (HLength l4)
-                )
-                => ReadChannel b 
-                -> HList l
-                -> Filter s IO a param 
-                -> (b -> s)
-                -> (b -> Bool)
-                -> (b -> IO ())
-                -> b
-                -> IO (HList l)
-whenNewElem cin' restIns' filter'' initState' spawnIf' onElem' = 
-  uncurry (loopSpawn filter'' initState' spawnIf' onElem') <=< doOnElem cin' restIns' filter'' initState' spawnIf' onElem'
+  where
+    loopSpawn filter'' initState' spawnIf' onElem' cin' restIns' =
+      maybe (pure restIns') (whenNewElem cin' restIns' filter'' initState' spawnIf' onElem')
+      =<< pull cin'
 
-doOnElem :: forall a b s param l r t l1 b0 l2 l3 b2 b3 l4. 
-                ( MkChans (ChansFilter a)
-                , FilterChans r (HList l3) t (HList (ReadChannel b : l1))
-                , l1 ~ l
-                , HAppendList l l3
-                , l4 ~ HAppendListR l l3
-                , l2 ~ (b ': ReadChannel b ': l4)
-                , HChan (ChansFilter a) ~ r t
-                , WithFilter a param (StateT s IO) ~ (b2 -> ReadChannel b2 -> b3)
-                , HLength (ExpandFilterToCh a param) ~ HLength l2
-                , HCurry' (HLength l2) (WithFilter a param (StateT s IO)) l2 (StateT s IO b0)
-                , ArityFwd (WithFilter a param (StateT s IO)) (HLength (ExpandFilterToCh a param))
-                , ArityRev b3 (HLength l4)
-                )
-                => ReadChannel b 
-                -> HList l
-                -> Filter s IO a param 
-                -> (b -> s)
-                -> (b -> Bool)
-                -> (b -> IO ())
-                -> b
-                -> IO (ReadChannel b, HList l1)
-doOnElem cin' restIns' filter'' initState' spanwIf' onElem' elem' = do
-  onElem' elem'
-  if spanwIf' elem' 
-    then do 
-      (reads', writes' :: HList l3) <- getFilterChannels <$> makeChans @(ChansFilter a)
-      let hlist = elem' `HCons` cin' `HCons` (restIns' `hAppendList` writes')
-      void $ async (runFilter hlist filter'' (initState' elem'))
-      return (hHead reads', hTail reads')
-    else return (cin', restIns')
+    whenNewElem cin' restIns' filter'' initState' spawnIf' onElem' =
+      uncurry (loopSpawn filter'' initState' spawnIf' onElem') <=< doOnElem cin' restIns' filter'' initState' spawnIf' onElem'
+
+    doOnElem cin' restIns' filter'' initState' spanwIf' onElem' elem' = do
+      onElem' elem'
+      if spanwIf' elem'
+        then do
+          (reads', writes' :: HList l3) <- getFilterChannels <$> makeChans @(ChansFilter a)
+          let hlist = elem' `HCons` cin' `HCons` (restIns' `hAppendList` writes')
+          void $ async (runFilter hlist filter'' (initState' elem'))
+          return (hHead reads', hTail reads')
+        else return (cin', restIns')
+
 
 type FilterChans r b t a = (LabeledOpticF (LabelableTy r) (Const b),
-                      LabeledOpticTo (LabelableTy r) "out-ch" (->),
-                      Labelable "out-ch" r t t b b,
-                      LabeledOpticF (LabelableTy r) (Const a),
-                      LabeledOpticP (LabelableTy r) (->),
-                      LabeledOpticTo (LabelableTy r) "in-ch" (->),
-                      Labelable "in-ch" r t t a a)
+                            LabeledOpticTo (LabelableTy r) "out-ch" (->),
+                            Labelable "out-ch" r t t b b,
+                            LabeledOpticF (LabelableTy r) (Const a),
+                            LabeledOpticP (LabelableTy r) (->),
+                            LabeledOpticTo (LabelableTy r) "in-ch" (->),
+                            Labelable "in-ch" r t t a a)
 
 getFilterChannels :: FilterChans r b t a => r t -> (a, b)
-getFilterChannels ch = 
+getFilterChannels ch =
    let inch = hLens' inChLabel
        outch = hLens' outChLabel
-       reads' = ch^.inch 
-       writes' = ch^.outch 
+       reads' = ch^.inch
+       writes' = ch^.outch
     in (reads', writes')
