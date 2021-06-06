@@ -1,4 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes     #-}
+{-# LANGUAGE ConstraintKinds     #-}
 {-# LANGUAGE UndecidableInstances    #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
 {-# OPTIONS_GHC -Wno-unused-foralls #-}
@@ -170,7 +171,7 @@ instance MkCh more => MkCh (a :<+> more) where
   mkCh _ = do
     (i, o) <- newChannel @a
     (il, ol) <- mkCh (Proxy @more)
-    return (i `HCons` il, o `HCons` ol)
+    return (i .*. il, o .*. ol)
 
 instance MkCh Eof where
   type HChI Eof = '[]
@@ -240,7 +241,7 @@ instance MkCh inToGen
 
   mkChans _ =  do
     (writes', reads') <- mkCh (Proxy @inToGen)
-    return $ mkRecord (inChLabel .=. reads' `HCons` outChLabel .=. writes' `HCons` HNil)
+    return $ mkRecord (inChLabel .=. reads' .*. outChLabel .=. writes' .*. HNil)
 
 
 makeChans :: forall (a :: Type). MkChans a => IO (HChan a)
@@ -412,6 +413,9 @@ runDP :: forall a s param filter r2 r3 l1 r4 l2 t2 s1 t1 s2 t5 l3 l4.
                                   ( MkChans a
                                   , HChan a ~ r3 t2
                                   , Filter s IO a param ~ filter
+                                  , CloseList l3
+                                  , CloseList l4
+                                  , CloseList (HAppendListR l1 l2)
                                   , ArityRev (WithInput a IO) (HLength (ExpandInputToCh a))
                                   , ArityFwd (WithInput a IO) (HLength (ExpandInputToCh a))
                                   , HCurry' (HLength (ExpandInputToCh a)) (WithInput a IO) l3 (IO ())
@@ -425,11 +429,33 @@ runDP :: forall a s param filter r2 r3 l1 r4 l2 t2 s1 t1 s2 t5 l3 l4.
                                   => DynamicPipeline a s param -> IO ()
 runDP DynamicPipeline{..} = do
   (cIns, cGen, cOut) <- inGenOut <$> makeChans @a
-  let genWithFilter      = _gsFilterTemplate generator `HCons` cGen
-  _ <- async (runStage (run input) cIns)
-  _ <- async (runStage @(HLength (ExpandGenToCh a filter)) @(WithGenerator a filter IO) (run (_gsGenerator generator)) genWithFilter)
-  oa <- async (runStage (run output) cOut)
-  wait oa
+  let genWithFilter      = _gsFilterTemplate generator .*. cGen
+  async (runStage (run input) cIns >> closeList cIns)
+    >> async (runStage @(HLength (ExpandGenToCh a filter)) @(WithGenerator a filter IO) (run (_gsGenerator generator)) genWithFilter >> closeList cGen)
+    >> async (runStage (run output) cOut >> closeList cOut) >>= wait
+
+type family AllClosable (l :: [Type]) :: Constraint where
+  AllClosable '[]       = ()
+  AllClosable (x ': xs) = (IsClosable x, AllClosable xs)
+
+class CloseList xs where
+  closeList :: HList xs -> IO ()
+
+instance (IsClosable x, CloseList xs) => CloseList (x ': xs) where
+  closeList (HCons x xs) = close x >> closeList xs
+
+instance CloseList '[] where
+  closeList _ = pure ()
+
+class IsClosable f where
+  close :: f -> IO ()
+
+instance IsClosable (WriteChannel a) where
+  close = end
+
+instance IsClosable (ReadChannel a) where
+  close _ = pure ()
+
 
 mkDP :: forall a s param. ValidDP (IsDP a) => Stage (WithInput a IO) -> GeneratorStage s IO a param -> Stage (WithOutput a IO) -> DynamicPipeline a s param
 mkDP = DynamicPipeline @a
@@ -565,7 +591,7 @@ spawnFilterWith = loopSpawn
       if spanwIf' elem'
         then do
           (reads', writes' :: HList l3) <- getFilterChannels <$> makeChans @(ChansFilter a)
-          let hlist = elem' `HCons` cin' `HCons` (restIns' `hAppendList` writes')
+          let hlist = elem' .*. cin' .*. (restIns' `hAppendList` writes')
           void $ async (runFilter hlist filter'' (initState' elem'))
           return (hHead reads', hTail reads')
         else return (cin', restIns')
