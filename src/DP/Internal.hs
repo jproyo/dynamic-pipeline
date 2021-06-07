@@ -1,5 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes     #-}
-{-# LANGUAGE ConstraintKinds     #-}
+{-# LANGUAGE ConstraintKinds         #-}
 {-# LANGUAGE UndecidableInstances    #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
 {-# OPTIONS_GHC -Wno-unused-foralls #-}
@@ -343,11 +343,20 @@ class EvalC l t | l -> t where
 instance forall a b. (a ~ b) => EvalC (Stage a) b where
   run (Stage _ f) = f
 
-runStage :: forall (n :: HNat) f (xs :: [*]) r. (HCurry' n f xs r, ArityFwd f n, ArityRev f n) => f -> HList xs -> r
-runStage = hUncurry
+runStage :: forall (n :: HNat) f (xs :: [*]).
+            (HCurry' n f xs (IO ()), ArityFwd f n, ArityRev f n, CloseList xs)
+            => Stage f -> HList xs -> IO (Async ())
+runStage fn cIns = async (hUncurry (run fn) cIns >> closeList cIns)
 
-runStage' :: HCurry' n f xs r => Proxy n -> f -> HList xs -> r
-runStage' = hUncurry'
+runStage'' :: forall (n :: HNat) f (xs :: [*]) (ss :: [*]).
+            (HCurry' n f xs (IO ()), ArityFwd f n, ArityRev f n, CloseList ss)
+            => Stage f -> HList xs -> HList ss -> IO (Async ())
+runStage'' fn cIns cClose = async (hUncurry (run fn) cIns >> closeList cClose)
+
+runStage' :: forall (n :: HNat) f (xs :: [*]) r.
+          (HCurry' n f xs r, ArityFwd f n, ArityRev f n)
+          => Stage f -> HList xs -> r
+runStage' = hUncurry . run
 
 data GeneratorStage s m a param = GeneratorStage
   { _gsGenerator      :: Stage (WithGenerator a (Filter s m a param) m)
@@ -381,18 +390,21 @@ infixr 5 |>>>
 (|>>) a1 a2 = Filter (a1 <|one a2)
 infixr 5 |>>
 
-runActor :: ( ArityRev (WithFilter a param m) (HLength (ExpandFilterToCh a param))
-            , ArityFwd (WithFilter a param m) (HLength (ExpandFilterToCh a param))
-            , HCurry' (HLength (ExpandFilterToCh a param)) (WithFilter a param m) xs r, MonadState s m)
-         => Actor s m a param -> HList xs -> r
-runActor ac = runStage . run $ unActor ac
+runActor :: ( MonadState s m2
+            , HCurry' n (WithFilter a param m2) xs r
+            , ArityFwd (WithFilter a param m2) n
+            , ArityRev (WithFilter a param m2) n
+            ) => Actor s m2 a param -> HList xs -> r
+runActor ac = runStage' (unActor ac)
 
-runFilter :: ( ArityRev (WithFilter a param (StateT s1 m1)) (HLength (ExpandFilterToCh a param))
-             , ArityFwd (WithFilter a param (StateT s1 m1)) (HLength (ExpandFilterToCh a param))
-             , HCurry' (HLength (ExpandFilterToCh a param)) (WithFilter a param (StateT s1 m1)) xs (StateT s2 m2 b)
-             , Monad m2, Monad m1)
-           => HList xs -> Filter s1 m1 a param -> s2 -> m2 ()
-runFilter clist f s = flip evalStateT s . mapM_ (`runActor` clist) . unFilter $ f
+runFilter :: ( MonadIO m1, Monad m2, CloseList ss
+             , HCurry' n (WithFilter a param (StateT s1 m2)) xs (StateT s2 IO ())
+             , ArityFwd (WithFilter a param (StateT s1 m2)) n
+             , ArityRev (WithFilter a param (StateT s1 m2)) n
+             ) => Filter s1 m2 a param -> s2 -> HList xs -> HList ss -> m1 (Async ())
+runFilter f s clist cClose = liftIO $ async $ do
+  flip evalStateT s . mapM_ (`runActor` clist) . unFilter $ f
+  liftIO $ closeList cClose
 
 withInput :: forall (a :: Type) (m :: Type -> Type). WithInput a m -> Stage (WithInput a m)
 withInput = mkStage' @(WithInput a m)
@@ -429,14 +441,12 @@ runDP :: forall a s param filter r2 r3 l1 r4 l2 t2 s1 t1 s2 t5 l3 l4.
                                   => DynamicPipeline a s param -> IO ()
 runDP DynamicPipeline{..} = do
   (cIns, cGen, cOut) <- inGenOut <$> makeChans @a
-  let genWithFilter      = _gsFilterTemplate generator .*. cGen
-  async (runStage (run input) cIns >> closeList cIns)
-    >> async (runStage @(HLength (ExpandGenToCh a filter)) @(WithGenerator a filter IO) (run (_gsGenerator generator)) genWithFilter >> closeList cGen)
-    >> async (runStage (run output) cOut >> closeList cOut) >>= wait
+  let genWithFilter   = _gsFilterTemplate generator .*. cGen
+  runStage input cIns
+    >> runStage'' @(HLength (ExpandGenToCh a filter)) @(WithGenerator a filter IO) (_gsGenerator generator) genWithFilter cGen
+    >> runStage output cOut >>= wait
 
-type family AllClosable (l :: [Type]) :: Constraint where
-  AllClosable '[]       = ()
-  AllClosable (x ': xs) = (IsClosable x, AllClosable xs)
+data NotClose (a :: Type)
 
 class CloseList xs where
   closeList :: HList xs -> IO ()
@@ -454,8 +464,7 @@ instance IsClosable (WriteChannel a) where
   close = end
 
 instance IsClosable (ReadChannel a) where
-  close _ = pure ()
-
+  close = const $ pure ()
 
 mkDP :: forall a s param. ValidDP (IsDP a) => Stage (WithInput a IO) -> GeneratorStage s IO a param -> Stage (WithOutput a IO) -> DynamicPipeline a s param
 mkDP = DynamicPipeline @a
@@ -537,13 +546,14 @@ spawnFilterForAll :: forall a b s param l r t l1 b0 l2 l3 b2 b3 l4.
                 ( MkChans (ChansFilter a)
                 , FilterChans r (HList l3) t (HList (ReadChannel b : l1))
                 , l1 ~ l
+                , CloseList (ReadChannel b ': l4)
                 , HAppendList l l3
                 , l4 ~ HAppendListR l l3
                 , l2 ~ (b ': ReadChannel b ': l4)
                 , HChan (ChansFilter a) ~ r t
                 , WithFilter a param (StateT s IO) ~ (b2 -> ReadChannel b2 -> b3)
                 , HLength (ExpandFilterToCh a param) ~ HLength l2
-                , HCurry' (HLength l2) (WithFilter a param (StateT s IO)) l2 (StateT s IO b0)
+                , HCurry' (HLength l2) (WithFilter a param (StateT s IO)) l2 (StateT s IO ())
                 , ArityFwd (WithFilter a param (StateT s IO)) (HLength (ExpandFilterToCh a param))
                 , ArityRev b3 (HLength l4)
                 )
@@ -557,6 +567,7 @@ spawnFilterForAll filter' initState = spawnFilterWith filter' initState (const T
 
 spawnFilterWith :: forall a b s param l r t l1 b0 l2 l3 b2 b3 l4.
                 ( MkChans (ChansFilter a)
+                , CloseList (ReadChannel b ': l4)
                 , FilterChans r (HList l3) t (HList (ReadChannel b : l1))
                 , l1 ~ l
                 , HAppendList l l3
@@ -565,7 +576,7 @@ spawnFilterWith :: forall a b s param l r t l1 b0 l2 l3 b2 b3 l4.
                 , HChan (ChansFilter a) ~ r t
                 , WithFilter a param (StateT s IO) ~ (b2 -> ReadChannel b2 -> b3)
                 , HLength (ExpandFilterToCh a param) ~ HLength l2
-                , HCurry' (HLength l2) (WithFilter a param (StateT s IO)) l2 (StateT s IO b0)
+                , HCurry' (HLength l2) (WithFilter a param (StateT s IO)) l2 (StateT s IO ())
                 , ArityFwd (WithFilter a param (StateT s IO)) (HLength (ExpandFilterToCh a param))
                 , ArityRev b3 (HLength l4)
                 )
@@ -592,7 +603,7 @@ spawnFilterWith = loopSpawn
         then do
           (reads', writes' :: HList l3) <- getFilterChannels <$> makeChans @(ChansFilter a)
           let hlist = elem' .*. cin' .*. (restIns' `hAppendList` writes')
-          void $ async (runFilter hlist filter'' (initState' elem'))
+          void $ runFilter filter'' (initState' elem') hlist (cin' .*. (restIns' `hAppendList` writes'))
           return (hHead reads', hTail reads')
         else return (cin', restIns')
 
