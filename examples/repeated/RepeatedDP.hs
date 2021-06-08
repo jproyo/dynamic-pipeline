@@ -1,4 +1,4 @@
-module Main where
+module Repeated.RepeatedDP where
 
 import           Data.HList
 import           DynamicPipeline
@@ -49,5 +49,5 @@ actorRepeted i rc _ wc _ = do
 output' :: Stage (ReadChannel Int -> ReadChannel Int -> IO ())
 output' = withOutput @DPExample @IO $ \_ ci -> forall ci print
 
-main :: IO ()
-main = runDP $ mkDP @DPExample input' generator' output'
+program :: IO ()
+program = runDP $ mkDP @DPExample input' generator' output'

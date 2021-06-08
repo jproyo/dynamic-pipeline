@@ -245,8 +245,10 @@ instance MkCh inToGen
     return $ mkRecord (inChLabel .=. reads' .*. outChLabel .=. writes' .*. HNil)
 
 
+{-# INLINE makeChans #-}
 makeChans :: forall (a :: Type). MkChans a => IO (HChan a)
 makeChans = mkChans (Proxy @a)
+
 
 inputChans :: ( LabeledOpticF (LabelableTy r1) (Const t1)
               , LabeledOpticP (LabelableTy r1) (->)
@@ -325,6 +327,7 @@ type AllChans r2 r3 l1 r4 l2 t2 s t1 s2 t5 l3 l4 = (LabeledOpticTo (LabelableTy 
             Labelable "out-ch" r2 s2 t5 (HList l1) (HList l1),
             Labelable "out-ch" r4 s t1 (HList l4) (HList l4))
 
+{-# INLINE inGenOut #-}
 inGenOut :: AllChans r2 r3 l1 r4 l2 t2 s t1 s2 t5 l3 l4 => r3 t2 -> (HList l3, HList (HAppendListR l1 l2), HList l4)
 inGenOut ch = (inputChans ch, generatorChans ch, outputChans ch)
 
@@ -332,9 +335,11 @@ inGenOut ch = (inputChans ch, generatorChans ch, outputChans ch)
 data Stage a where
   Stage :: Proxy a -> a -> Stage a
 
+{-# INLINE mkStage #-}
 mkStage :: forall a. Proxy a -> a -> Stage a
 mkStage = Stage @a
 
+{-# INLINE mkStage' #-}
 mkStage' :: forall a. a -> Stage a
 mkStage' = Stage (Proxy @a)
 
@@ -344,26 +349,31 @@ class EvalC l t | l -> t where
 instance forall a b. (a ~ b) => EvalC (Stage a) b where
   run (Stage _ f) = f
 
+{-# INLINE runStage #-}
 runStage :: forall (n :: HNat) f (xs :: [*]).
             (HCurry' n f xs (IO ()), ArityFwd f n, ArityRev f n, CloseList xs)
             => Stage f -> HList xs -> IO (Async ())
 runStage fn cIns = async (hUncurry (run fn) cIns >> closeList cIns)
 
+{-# INLINE runStage' #-}
+runStage' :: forall (n :: HNat) f (xs :: [*]) r.
+          (HCurry' n f xs r, ArityFwd f n, ArityRev f n)
+          => Stage f -> HList xs -> r
+runStage' = hUncurry . run
+
+{-# INLINE runStage'' #-}
 runStage'' :: forall (n :: HNat) f (xs :: [*]) (ss :: [*]).
             (HCurry' n f xs (IO ()), ArityFwd f n, ArityRev f n, CloseList ss)
             => Stage f -> HList xs -> HList ss -> IO (Async ())
 runStage'' fn cIns cClose = async (hUncurry (run fn) cIns >> closeList cClose)
 
-runStage' :: forall (n :: HNat) f (xs :: [*]) r.
-          (HCurry' n f xs r, ArityFwd f n, ArityRev f n)
-          => Stage f -> HList xs -> r
-runStage' = hUncurry . run
 
 data GeneratorStage s m a param = GeneratorStage
   { _gsGenerator      :: Stage (WithGenerator a (Filter s m a param) m)
   , _gsFilterTemplate :: Filter s m a param
   }
 
+{-# INLINE mkGenerator #-}
 mkGenerator :: Stage (WithGenerator a (Filter s m a param) m) -> Filter s m a param -> GeneratorStage s m a param
 mkGenerator = GeneratorStage
 
@@ -374,23 +384,29 @@ newtype Filter s m a param = Filter { unFilter :: NonEmpty (Actor s (StateT s m)
 
 instance Wrapped (Filter s m a param)
 
+{-# INLINE mkFilter #-}
 mkFilter :: forall s m a param. WithFilter a param (StateT s m) -> Filter s m a param
 mkFilter = Filter . single
 
+{-# INLINE single #-}
 single :: forall s m a param. WithFilter a param (StateT s m) -> NonEmpty (Actor s (StateT s m) a param)
 single = one . actor
 
+{-# INLINE actor #-}
 actor :: forall s m a param. WithFilter a param m -> Actor s m a param
 actor = Actor . mkStage' @(WithFilter a param m)
 
+{-# INLINE (|>>>) #-}
 (|>>>) :: forall s m a param. Actor s (StateT s m) a param -> Filter s m a param -> Filter s m a param
 (|>>>) a f = f & _Wrapped' %~ (a <|)
 infixr 5 |>>>
 
+{-# INLINE (|>>) #-}
 (|>>) :: forall s m a param. Actor s (StateT s m) a param -> Actor s (StateT s m) a param -> Filter s m a param
 (|>>) a1 a2 = Filter (a1 <|one a2)
 infixr 5 |>>
 
+{-# INLINE runActor #-}
 runActor :: ( MonadState s m2
             , HCurry' n (WithFilter a param m2) xs r
             , ArityFwd (WithFilter a param m2) n
@@ -398,6 +414,7 @@ runActor :: ( MonadState s m2
             ) => Actor s m2 a param -> HList xs -> r
 runActor ac = runStage' (unActor ac)
 
+{-# INLINE runFilter #-}
 runFilter :: ( MonadIO m1, Monad m2, CloseList ss
              , HCurry' n (WithFilter a param (StateT s1 m2)) xs (StateT s2 IO ())
              , ArityFwd (WithFilter a param (StateT s1 m2)) n
@@ -407,12 +424,15 @@ runFilter f s clist cClose = liftIO $ async $ do
   flip evalStateT s . mapM_ (`runActor` clist) . unFilter $ f
   liftIO $ closeList cClose
 
+{-# INLINE withInput #-}
 withInput :: forall (a :: Type) (m :: Type -> Type). WithInput a m -> Stage (WithInput a m)
 withInput = mkStage' @(WithInput a m)
 
+{-# INLINE withGenerator #-}
 withGenerator :: forall (a :: Type) (filter :: Type) (m :: Type -> Type). WithGenerator a filter m -> Stage (WithGenerator a filter m)
 withGenerator = mkStage' @(WithGenerator a filter m)
 
+{-# INLINE withOutput #-}
 withOutput :: forall (a :: Type) (m :: Type -> Type). WithOutput a m -> Stage (WithOutput a m)
 withOutput = mkStage' @(WithOutput a m)
 
@@ -422,6 +442,11 @@ data DynamicPipeline a s param = ValidDP (IsDP a) => DynamicPipeline
   , output    :: Stage (WithOutput a IO)
   }
 
+{-# INLINE mkDP #-}
+mkDP :: forall a s param. ValidDP (IsDP a) => Stage (WithInput a IO) -> GeneratorStage s IO a param -> Stage (WithOutput a IO) -> DynamicPipeline a s param
+mkDP = DynamicPipeline @a
+
+{-# INLINE runDP #-}
 runDP :: forall a s param filter r2 r3 l1 r4 l2 t2 s1 t1 s2 t5 l3 l4.
                                   ( MkChans a
                                   , HChan a ~ r3 t2
@@ -467,8 +492,6 @@ instance IsClosable (WriteChannel a) where
 instance IsClosable (ReadChannel a) where
   close = const $ pure ()
 
-mkDP :: forall a s param. ValidDP (IsDP a) => Stage (WithInput a IO) -> GeneratorStage s IO a param -> Stage (WithOutput a IO) -> DynamicPipeline a s param
-mkDP = DynamicPipeline @a
 
 {-# INLINE forall #-}
 forall :: ReadChannel a -> (a -> IO ()) -> IO ()
@@ -510,6 +533,7 @@ unfoldFile file writeChannel fn =
 unfoldT :: Foldable t => t a -> WriteChannel b -> (a -> b) -> IO ()
 unfoldT ts writeChannel fn = forM_ ts (flip push writeChannel . fn)
 
+{-# INLINE spawnFilterForAll #-}
 spawnFilterForAll :: forall a b s param l r t l1 b0 l2 l3 b2 b3 l4.
                 ( MkChans (ChansFilter a)
                 , FilterChans r (HList l3) t (HList (ReadChannel b : l1))
@@ -533,6 +557,7 @@ spawnFilterForAll :: forall a b s param l r t l1 b0 l2 l3 b2 b3 l4.
                 -> IO (HList l)
 spawnFilterForAll filter' initState = spawnFilterWith filter' initState (const True)
 
+{-# INLINE spawnFilterWith #-}
 spawnFilterWith :: forall a b s param l r t l1 b0 l2 l3 b2 b3 l4.
                 ( MkChans (ChansFilter a)
                 , CloseList (ReadChannel b ': l4)
@@ -584,6 +609,7 @@ type FilterChans r b t a = (LabeledOpticF (LabelableTy r) (Const b),
                             LabeledOpticTo (LabelableTy r) "in-ch" (->),
                             Labelable "in-ch" r t t a a)
 
+{-# INLINE getFilterChannels #-}
 getFilterChannels :: FilterChans r b t a => r t -> (a, b)
 getFilterChannels ch =
    let inch = hLens' inChLabel

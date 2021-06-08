@@ -81,7 +81,7 @@ library:
 executables:
   repeated-example:
     source-dirs:
-      examples/repeated
+      examples
     main:
       Main.hs
     dependencies:
