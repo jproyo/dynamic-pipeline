@@ -7,7 +7,7 @@ import           Relude
 type DPExample = Input (Channel (Int :<+> Int :<+> Eof)) :>> Generator (Channel (Int :<+> Int :<+> Eof)) :>> Output
 
 input' :: Stage (WriteChannel Int -> WriteChannel Int -> IO ())
-input' = withInput @DPExample @IO $ \cout _ -> forM_ ([1 .. 1000] <> [1 .. 1000]) (`push` cout)
+input' = withInput @DPExample @IO $ \cout _ -> unfoldT ([1 .. 1000] <> [1 .. 1000]) cout identity
 
 generator' :: GeneratorStage (Maybe Int) IO DPExample Int
 generator' =

@@ -9,6 +9,7 @@ import qualified Control.Concurrent                       as CC
 import           Control.Concurrent.Async
 import           Control.Concurrent.Chan.Unagi.NoBlocking
 import           Control.Lens                             hiding ((<|))
+import           Data.ByteString                          as B
 import           Data.HList
 import           Data.HList.Labelable
 import           Data.List.NonEmpty
@@ -491,56 +492,23 @@ push a c = writeChan (unWrite c) (Just a)
 pull :: ReadChannel a -> IO (Maybe a)
 pull = readChan (CC.threadDelay 100) . unRead
 
+{-# INLINE unfoldOnChannel #-}
+unfoldOnChannel :: IO a -> (a -> b) -> IO Bool -> WriteChannel b -> IO ()
+unfoldOnChannel seed fn stopIfM writeChannel  = loop
+ where
+  loop = ifM stopIfM
+            (pure ())
+            (seed >>= flip push writeChannel . fn >> loop)
 
--- {-# INLINE (|>>) #-}
--- (|>>) :: Stage a b -> (a -> IO c) -> IO (Stage c b)
--- (|>>) inp f = do
---   newC' <- newChan
---   newO' <- newChan
---   end' newO'
---   Stage newC' newO' <$> async (loop newC')
---  where
---   loop newCh = pullIn inp >>= loopUntilDone newCh (loopE newCh) loop
+{-# INLINE unfoldFile #-}
+unfoldFile :: FilePath -> WriteChannel b -> (ByteString -> b) -> IO ()
+unfoldFile file writeChannel fn =
+  R.withFile file ReadMode $ \h ->
+    unfoldOnChannel (B.hGetLine h) fn (R.hIsEOF h) writeChannel
 
---   loopE ch a = flip push' ch =<< f a
-
--- loopUntilDone :: Channel b
---               -> (a -> IO ())
---               -> (Channel b -> IO ())
---               -> Maybe a
---               -> IO ()
--- loopUntilDone ch f loop = maybe (end' ch) ((>> loop ch) . f)
-
--- -- Generate Stage base on a seed function `f`
--- {-# INLINE unfoldM #-}
--- unfoldM :: IO a -> IO Bool -> IO (Stage a b)
--- unfoldM f stop = do
---   newCh  <- newChan
---   newCh' <- newChan
---   end' newCh'
---   Stage newCh newCh' <$> async (loop newCh)
---  where
---   loop newCh = ifM stop (end' newCh) (f >>= (`push'` newCh) >> loop newCh)
-
--- {-# INLINE mapM #-}
--- mapM :: (b -> IO c) -> Stage a b -> IO ()
--- mapM f inCh = async loop >>= wait
---   where loop = maybe (pure ()) (\a -> f a >> loop) =<< pullOut inCh
-
--- {-# INLINE foldMap #-}
--- foldMap :: Monoid m => (b -> m) -> Stage a b -> IO m
--- foldMap m s = async (loop mempty) >>= wait
---   where loop xs = maybe (pure xs) (loop . mappend xs . m) =<< pullOut s
-
--- {-# INLINE newStage #-}
--- newStage :: IO (Async ()) -> IO (Stage a b)
--- newStage as = Stage <$> newChan <*> newChan <*> as
-
--- {-# INLINE fromText #-}
--- fromText :: Text -> IO (Stage ByteString b)
--- fromText bs = newStage (async $ pure ()) >>= \s ->
---   R.mapM_ (`pushIn` s) (R.map R.encodeUtf8 $ R.lines bs) >> endIn s >> return s
-
+{-# INLINE unfoldT #-}
+unfoldT :: Foldable t => t a -> WriteChannel b -> (a -> b) -> IO ()
+unfoldT ts writeChannel fn = forM_ ts (flip push writeChannel . fn)
 
 spawnFilterForAll :: forall a b s param l r t l1 b0 l2 l3 b2 b3 l4.
                 ( MkChans (ChansFilter a)
