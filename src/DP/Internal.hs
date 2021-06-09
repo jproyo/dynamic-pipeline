@@ -494,10 +494,16 @@ instance IsClosable (ReadChannel a) where
 
 
 {-# INLINE forall #-}
-forall :: ReadChannel a -> (a -> IO ()) -> IO ()
+forall :: MonadIO m => ReadChannel a -> (a -> m ()) -> m ()
 forall = loop'
   where
-    loop' c io = maybe (pure ()) (\e -> io e >> loop' c io) =<< pull c
+    loop' c io = maybe (pure ()) (\e -> io e >> loop' c io) =<< liftIO (pull c)
+
+{-# INLINE forall' #-}
+forall' :: MonadIO m => ReadChannel a -> m () -> (a -> m ()) -> m ()
+forall' = loop'
+  where
+    loop' c onNothing io = maybe onNothing (\e -> io e >> loop' c onNothing io) =<< liftIO (pull c)
 
 {-# NOINLINE newChannel #-}
 newChannel :: forall a. IO (WriteChannel a, ReadChannel a)
@@ -508,15 +514,15 @@ end :: WriteChannel a -> IO ()
 end = flip writeChan Nothing . unWrite
 
 {-# INLINE push #-}
-push :: a -> WriteChannel a -> IO ()
-push a c = writeChan (unWrite c) (Just a)
+push :: MonadIO m => a -> WriteChannel a -> m ()
+push a c = liftIO $ writeChan (unWrite c) (Just a)
 
 {-# INLINE pull #-}
 pull :: ReadChannel a -> IO (Maybe a)
 pull = readChan (CC.threadDelay 100) . unRead
 
 {-# INLINE unfoldOnChannel #-}
-unfoldOnChannel :: IO a -> (a -> b) -> IO Bool -> WriteChannel b -> IO ()
+unfoldOnChannel :: MonadIO m => m a -> (a -> b) -> m Bool -> WriteChannel b -> m ()
 unfoldOnChannel seed fn stopIfM writeChannel  = loop
  where
   loop = ifM stopIfM
@@ -524,9 +530,9 @@ unfoldOnChannel seed fn stopIfM writeChannel  = loop
             (seed >>= flip push writeChannel . fn >> loop)
 
 {-# INLINE unfoldFile #-}
-unfoldFile :: FilePath -> WriteChannel b -> (ByteString -> b) -> IO ()
+unfoldFile :: MonadIO m => FilePath -> WriteChannel b -> (ByteString -> b) -> m ()
 unfoldFile file writeChannel fn =
-  R.withFile file ReadMode $ \h ->
+  liftIO $ R.withFile file ReadMode $ \h ->
     unfoldOnChannel (B.hGetLine h) fn (R.hIsEOF h) writeChannel
 
 {-# INLINE unfoldT #-}

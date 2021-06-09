@@ -1,4 +1,4 @@
-module Repeated.RepeatedDP where
+module Misc.RepeatedDP where
 
 import           Data.HList
 import           DynamicPipeline

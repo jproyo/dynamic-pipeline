@@ -1,7 +1,8 @@
 module Main where
 
+--import           Misc.RepeatedDP   as Repeated
+import           Graph.ConnectedComp as CC
 import           Relude
-import           Repeated.RepeatedDP                               as Repeated
 
 main :: IO ()
-main = Repeated.program
+main = CC.program
