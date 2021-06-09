@@ -531,9 +531,9 @@ unfoldOnChannel seed fn stopIfM writeChannel  = loop
 
 {-# INLINE unfoldFile #-}
 unfoldFile :: MonadIO m => FilePath -> WriteChannel b -> (ByteString -> b) -> m ()
-unfoldFile file writeChannel fn =
-  liftIO $ R.withFile file ReadMode $ \h ->
-    unfoldOnChannel (B.hGetLine h) fn (R.hIsEOF h) writeChannel
+unfoldFile file writeChannel fn = liftIO $
+    R.withFile file ReadMode $ \h ->
+      unfoldOnChannel (B.hGetLine h) fn (R.hIsEOF h) writeChannel
 
 {-# INLINE unfoldT #-}
 unfoldT :: Foldable t => t a -> WriteChannel b -> (a -> b) -> IO ()
