@@ -62,12 +62,10 @@ dependencies:
   - base >= 4.7 && < 5
   - async
   - bytestring
-  - containers
   - HList
   - lens
   - relude >= 1.0.0.0
   - unagi-chan
-  - trifecta
 
 library:
   source-dirs: src
@@ -78,7 +76,7 @@ library:
       other-modules: Paths_connected_comp
 
 executables:
-  repeated-example:
+  examples:
     source-dirs:
       examples
     main:
@@ -87,6 +85,7 @@ executables:
       - dynamic-pipeline
       - async
       - HList
+      - optparse-applicative
       - trifecta
     ghc-options:
       - -threaded

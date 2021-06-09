@@ -76,7 +76,5 @@ genAction filter' readEdge readCC _ writeCC = do
   forall (hHead results) (`push` writeCC)
 
 
-program :: IO ()
-program = do
-  (file : _) <- getArgs
-  runDP $ mkDP @DPConnComp (input' file) generator' output'
+program :: FilePath -> IO ()
+program file = runDP $ mkDP @DPConnComp (input' file) generator' output'
