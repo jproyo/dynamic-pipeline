@@ -14,6 +14,9 @@ ghc-options:
   - -Wall
   - -fno-warn-partial-type-signatures
   - -fconstraint-solver-iterations=0
+  - -fspecialise-aggressively
+  - -fexpose-all-unfoldings
+  - -flate-specialise
   - -Wincomplete-record-updates
   - -Wincomplete-uni-patterns
   - -Wredundant-constraints
