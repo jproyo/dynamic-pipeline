@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 3b095079a52f0cc1f33f337e0d6b09a605d1a3817f0f0c490748b93c7a3d88b2
+-- hash: e95f91d5fc8c0ae72d8397b01a3d0a82f47b43034de30ae05a1159488e976936
 
 name:           dynamic-pipeline
 version:        0.1.0.0
@@ -28,7 +28,7 @@ library
   exposed-modules:
       DynamicPipeline
   other-modules:
-      DP.Internal
+      DynamicPipeline.Internal
       Paths_dynamic_pipeline
   hs-source-dirs:
       src

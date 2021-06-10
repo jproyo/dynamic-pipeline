@@ -1,9 +1,11 @@
 module DynamicPipeline 
-    ( module DP.Internal
+    ( module DynamicPipeline.Internal
+    , (.*.)
     )
     where
 
-import DP.Internal
+import Data.HList ((.*.))
+import DynamicPipeline.Internal
     ( DynamicPipeline,
       Filter,
       Actor,
@@ -39,4 +41,5 @@ import DP.Internal
       unfoldFile,
       unfoldT,
       spawnFilterForAll,
+      spawnFilterForAll',
       spawnFilterWith)

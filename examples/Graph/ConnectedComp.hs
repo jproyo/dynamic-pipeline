@@ -70,7 +70,6 @@ genAction :: Filter ConnectedComponents IO DPConnComp Edge
 genAction filter' readEdge readCC _ writeCC = do
   results <- spawnFilterForAll filter'
                                toConnectedComp
-                               (const $ pure ())
                                readEdge
                                (readCC .*. HNil)
   forall (hHead results) (`push` writeCC)
