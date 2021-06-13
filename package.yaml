@@ -21,6 +21,7 @@ ghc-options:
   - -Wincomplete-uni-patterns
   - -Wredundant-constraints
   - -Wno-unused-top-binds
+  - -Wno-unused-foralls
   - -fno-warn-deprecations
   - -fno-warn-orphans
 
@@ -66,6 +67,7 @@ dependencies:
   - async
   - bytestring
   - HList
+  - indexed
   - lens
   - relude >= 1.0.0.0
   - unagi-chan

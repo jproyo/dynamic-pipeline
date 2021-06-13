@@ -1,19 +1,13 @@
 module DynamicPipeline 
-    ( module DynamicPipeline.Internal
+    ( module DynamicPipeline.Stage
+    , module DynamicPipeline.Channel
     , (.*.)
     )
     where
 
 import Data.HList ((.*.))
-import DynamicPipeline.Internal
-    ( DynamicPipeline,
-      Filter,
-      Actor,
-      GeneratorStage,
-      Stage,
-      ValidDP,
-      IsDP,
-      Eof,
+import DynamicPipeline.Channel
+    ( Eof,
       Output,
       Generator,
       Input,
@@ -22,6 +16,22 @@ import DynamicPipeline.Internal
       type (:<+>)(..),
       ReadChannel,
       WriteChannel,
+      forall,
+      forall',
+      push,
+      pull,
+      unfoldOnChannel,
+      unfoldFile,
+      unfoldT,
+    )
+import DynamicPipeline.Stage
+    ( DynamicPipeline,
+      Filter,
+      Actor,
+      GeneratorStage,
+      Stage,
+      ValidDP,
+      IsDP,
       mkGenerator,
       mkFilter,
       single,
@@ -33,13 +43,6 @@ import DynamicPipeline.Internal
       withOutput,
       mkDP,
       runDP,
-      forall,
-      forall',
-      push,
-      pull,
-      unfoldOnChannel,
-      unfoldFile,
-      unfoldT,
       spawnFilterForAll,
       spawnFilterForAll',
       spawnFilterWith)

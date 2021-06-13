@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: e95f91d5fc8c0ae72d8397b01a3d0a82f47b43034de30ae05a1159488e976936
+-- hash: 58c0dfee4a343b193a821f77c25a93ac1c539c7527d1487912dd7203b01d1366
 
 name:           dynamic-pipeline
 version:        0.1.0.0
@@ -28,17 +28,19 @@ library
   exposed-modules:
       DynamicPipeline
   other-modules:
-      DynamicPipeline.Internal
+      DynamicPipeline.Channel
+      DynamicPipeline.Stage
       Paths_dynamic_pipeline
   hs-source-dirs:
       src
   default-extensions: ConstraintKinds DataKinds DefaultSignatures DeriveAnyClass DeriveFoldable DeriveFunctor DeriveGeneric DeriveLift DeriveTraversable DerivingStrategies DerivingVia EmptyCase FlexibleContexts FlexibleInstances FunctionalDependencies GADTs GeneralizedNewtypeDeriving LambdaCase MultiParamTypeClasses MultiWayIf NoImplicitPrelude OverloadedStrings PackageImports PartialTypeSignatures PolyKinds Rank2Types RankNTypes RecordWildCards ScopedTypeVariables StandaloneDeriving TemplateHaskell TupleSections TypeApplications TypeOperators TypeFamilies
-  ghc-options: -Wall -fno-warn-partial-type-signatures -fconstraint-solver-iterations=0 -fspecialise-aggressively -fexpose-all-unfoldings -flate-specialise -Wincomplete-record-updates -Wincomplete-uni-patterns -Wredundant-constraints -Wno-unused-top-binds -fno-warn-deprecations -fno-warn-orphans
+  ghc-options: -Wall -fno-warn-partial-type-signatures -fconstraint-solver-iterations=0 -fspecialise-aggressively -fexpose-all-unfoldings -flate-specialise -Wincomplete-record-updates -Wincomplete-uni-patterns -Wredundant-constraints -Wno-unused-top-binds -Wno-unused-foralls -fno-warn-deprecations -fno-warn-orphans
   build-depends:
       HList
     , async
     , base >=4.7 && <5
     , bytestring
+    , indexed
     , lens
     , relude >=1.0.0.0
     , unagi-chan
@@ -57,13 +59,14 @@ executable examples
   hs-source-dirs:
       examples
   default-extensions: ConstraintKinds DataKinds DefaultSignatures DeriveAnyClass DeriveFoldable DeriveFunctor DeriveGeneric DeriveLift DeriveTraversable DerivingStrategies DerivingVia EmptyCase FlexibleContexts FlexibleInstances FunctionalDependencies GADTs GeneralizedNewtypeDeriving LambdaCase MultiParamTypeClasses MultiWayIf NoImplicitPrelude OverloadedStrings PackageImports PartialTypeSignatures PolyKinds Rank2Types RankNTypes RecordWildCards ScopedTypeVariables StandaloneDeriving TemplateHaskell TupleSections TypeApplications TypeOperators TypeFamilies
-  ghc-options: -Wall -fno-warn-partial-type-signatures -fconstraint-solver-iterations=0 -fspecialise-aggressively -fexpose-all-unfoldings -flate-specialise -Wincomplete-record-updates -Wincomplete-uni-patterns -Wredundant-constraints -Wno-unused-top-binds -fno-warn-deprecations -fno-warn-orphans -threaded -O3 -rtsopts -with-rtsopts=-N
+  ghc-options: -Wall -fno-warn-partial-type-signatures -fconstraint-solver-iterations=0 -fspecialise-aggressively -fexpose-all-unfoldings -flate-specialise -Wincomplete-record-updates -Wincomplete-uni-patterns -Wredundant-constraints -Wno-unused-top-binds -Wno-unused-foralls -fno-warn-deprecations -fno-warn-orphans -threaded -O3 -rtsopts -with-rtsopts=-N
   build-depends:
       HList
     , async
     , base >=4.7 && <5
     , bytestring
     , dynamic-pipeline
+    , indexed
     , lens
     , optparse-applicative
     , relude >=1.0.0.0
@@ -79,7 +82,7 @@ test-suite conn-comp-tests
   hs-source-dirs:
       test
   default-extensions: ConstraintKinds DataKinds DefaultSignatures DeriveAnyClass DeriveFoldable DeriveFunctor DeriveGeneric DeriveLift DeriveTraversable DerivingStrategies DerivingVia EmptyCase FlexibleContexts FlexibleInstances FunctionalDependencies GADTs GeneralizedNewtypeDeriving LambdaCase MultiParamTypeClasses MultiWayIf NoImplicitPrelude OverloadedStrings PackageImports PartialTypeSignatures PolyKinds Rank2Types RankNTypes RecordWildCards ScopedTypeVariables StandaloneDeriving TemplateHaskell TupleSections TypeApplications TypeOperators TypeFamilies
-  ghc-options: -Wall -fno-warn-partial-type-signatures -fconstraint-solver-iterations=0 -fspecialise-aggressively -fexpose-all-unfoldings -flate-specialise -Wincomplete-record-updates -Wincomplete-uni-patterns -Wredundant-constraints -Wno-unused-top-binds -fno-warn-deprecations -fno-warn-orphans -threaded -O2 -rtsopts -with-rtsopts=-N -Wno-unused-local-binds -Wno-unused-matches
+  ghc-options: -Wall -fno-warn-partial-type-signatures -fconstraint-solver-iterations=0 -fspecialise-aggressively -fexpose-all-unfoldings -flate-specialise -Wincomplete-record-updates -Wincomplete-uni-patterns -Wredundant-constraints -Wno-unused-top-binds -Wno-unused-foralls -fno-warn-deprecations -fno-warn-orphans -threaded -O2 -rtsopts -with-rtsopts=-N -Wno-unused-local-binds -Wno-unused-matches
   build-tool-depends:
       hspec-discover:hspec-discover
   build-depends:
@@ -90,6 +93,7 @@ test-suite conn-comp-tests
     , bytestring
     , dynamic-pipeline
     , hspec ==2.*
+    , indexed
     , lens
     , relude >=1.0.0.0
     , unagi-chan
