@@ -1,6 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes     #-}
 {-# LANGUAGE UndecidableInstances    #-}
-{-# LANGUAGE UndecidableSuperClasses #-}
 module DynamicPipeline.Channel where
 
 import qualified Control.Concurrent                       as CC
@@ -9,7 +8,6 @@ import           Control.Lens                             hiding ((<|))
 import           Data.ByteString                          as B
 import           Data.HList
 import           Data.HList.Labelable
-import           GHC.TypeLits
 import           Relude                                   as R
 
 -- Definitions
@@ -41,8 +39,8 @@ push :: MonadIO m => a -> WriteChannel a -> m ()
 push a c = liftIO $ writeChan (unWrite c) (Just a)
 
 {-# INLINE pull #-}
-pull :: ReadChannel a -> IO (Maybe a)
-pull = readChan (CC.threadDelay 100) . unRead
+pull :: MonadIO m => ReadChannel a -> m (Maybe a)
+pull = liftIO . readChan (CC.threadDelay 100) . unRead
 
 {-# INLINE unfoldOnChannel #-}
 unfoldOnChannel :: MonadIO m => m a -> (a -> b) -> m Bool -> WriteChannel b -> m ()
@@ -59,7 +57,7 @@ unfoldFile file writeChannel fn = liftIO $
       unfoldOnChannel (B.hGetLine h) fn (R.hIsEOF h) writeChannel
 
 {-# INLINE unfoldT #-}
-unfoldT :: Foldable t => t a -> WriteChannel b -> (a -> b) -> IO ()
+unfoldT :: (MonadIO m, Foldable t) => t a -> WriteChannel b -> (a -> b) -> m ()
 unfoldT ts writeChannel fn = forM_ ts (flip push writeChannel . fn)
 
 
@@ -89,79 +87,6 @@ data ChansFilter (a :: Type)
 data ChanWriteInput (a :: Type)
 data ChanReadWriteGen (a :: Type)
 data ChanReadOut (a :: Type)
-
--- Inductive Type Family for Expanding and building Input, Generator, Filter and Output Functions Signatures
-type family WithInput (a :: Type) (m :: Type -> Type) :: Type where
-  WithInput (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) m = WithInput (ChanIn inToGen) m
-  WithInput (ChanIn (a :<+> more)) m         = WriteChannel a -> WithInput (ChanIn more) m
-  WithInput (ChanIn Eof) m                   = m ()
-  WithInput (ChanOutIn (a :<+> more) ins) m  = ReadChannel a -> WithInput (ChanOutIn more ins) m
-  WithInput (ChanOutIn Eof ins) m            = WithInput (ChanIn ins) m
-  WithInput a _                              = TypeError
-                                                  ( 'Text "Invalid Semantic for Building DP Program"
-                                                    ':$$: 'Text "in the type '"
-                                                    ':<>: 'ShowType a
-                                                    ':<>: 'Text "'"
-                                                    ':$$: 'Text "Language Grammar:"
-                                                    ':$$: 'Text "DP    = Input CHANS :>> Generator CHANS :>> Output"
-                                                    ':$$: 'Text "CHANS = Channel CH"
-                                                    ':$$: 'Text "CH    = Type | Type :<+> CH"
-                                                    ':$$: 'Text "Example: 'Input (Channel (Int :<+> Int)) :>> Generator (Channel (Int :<+> Int)) :>> Output'"
-                                                  )
-
-type family WithGenerator (a :: Type) (filter :: Type) (m :: Type -> Type) :: Type where
-  WithGenerator (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) filter m = filter -> WithGenerator (ChanOutIn inToGen genToOut) filter m
-  WithGenerator (ChanIn (a :<+> more)) filter m         = WriteChannel a -> WithGenerator (ChanIn more) filter m
-  WithGenerator (ChanIn Eof) filter m                   = m ()
-  WithGenerator (ChanOutIn (a :<+> more) ins) filter m  = ReadChannel a -> WithGenerator (ChanOutIn more ins) filter m
-  WithGenerator (ChanOutIn Eof ins) filter m            = WithGenerator (ChanIn ins) filter m
-  WithGenerator a _ _                                   = TypeError
-                                                            ( 'Text "Invalid Semantic for Building DP Program"
-                                                              ':$$: 'Text "in the type '"
-                                                              ':<>: 'ShowType a
-                                                              ':<>: 'Text "'"
-                                                              ':$$: 'Text "Language Grammar:"
-                                                              ':$$: 'Text "DP    = Input CHANS :>> Generator CHANS :>> Output"
-                                                              ':$$: 'Text "CHANS = Channel CH"
-                                                              ':$$: 'Text "CH    = Type | Type :<+> CH"
-                                                              ':$$: 'Text "Example: 'Input (Channel (Int :<+> Int)) :>> Generator (Channel (Int :<+> Int)) :>> Output'"
-                                                            )
-
-type family WithFilter (a :: Type) (param :: Type) (m :: Type -> Type) :: Type where
-  WithFilter (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) param m
-                                                    = param -> WithFilter (ChanOutIn inToGen genToOut) param m
-  WithFilter (ChanIn (a :<+> more)) param m         = WriteChannel a -> WithFilter (ChanIn more) param m
-  WithFilter (ChanIn Eof) param m                   = m ()
-  WithFilter (ChanOutIn (a :<+> more) ins) param m  = ReadChannel a -> WithFilter (ChanOutIn more ins) param m
-  WithFilter (ChanOutIn Eof ins) param m            = WithFilter (ChanIn ins) param m
-  WithFilter a _ _                                  = TypeError
-                                                ( 'Text "Invalid Semantic for Building DP Program"
-                                                  ':$$: 'Text "in the type '"
-                                                  ':<>: 'ShowType a
-                                                  ':<>: 'Text "'"
-                                                  ':$$: 'Text "Language Grammar:"
-                                                  ':$$: 'Text "DP    = Input CHANS :>> Generator CHANS :>> Output"
-                                                  ':$$: 'Text "CHANS = Channel CH"
-                                                  ':$$: 'Text "CH    = Type | Type :<+> CH"
-                                                  ':$$: 'Text "Example: 'Input (Channel (Int :<+> Int)) :>> Generator (Channel (Int :<+> Int)) :>> Output'"
-                                                )
-
-type family WithOutput (a :: Type) (m :: Type -> Type) :: Type where
-  WithOutput (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) m
-                                               = WithOutput (ChanOut genToOut) m
-  WithOutput (ChanOut (a :<+> more)) m         = ReadChannel a -> WithOutput (ChanOut more) m
-  WithOutput (ChanOut Eof) m                   = m ()
-  WithOutput a _                               = TypeError
-                                                  ( 'Text "Invalid Semantic for Building DP Program"
-                                                    ':$$: 'Text "in the type '"
-                                                    ':<>: 'ShowType a
-                                                    ':<>: 'Text "'"
-                                                    ':$$: 'Text "Language Grammar:"
-                                                    ':$$: 'Text "DP    = Input CHANS :>> Generator CHANS :>> Output"
-                                                    ':$$: 'Text "CHANS = Channel CH"
-                                                    ':$$: 'Text "CH    = Type | Type :<+> CH"
-                                                    ':$$: 'Text "Example: 'Input (Channel (Int :<+> Int)) :>> Generator (Channel (Int :<+> Int)) :>> Output'"
-                                                  )
 
 -- Type encoding for Building Chans. Only for internal use in the Associated Type Family and combinators of MkCh and MkChans
 -- For accessing Dynamic Indexed Records of Channels

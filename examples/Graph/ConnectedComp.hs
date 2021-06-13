@@ -12,23 +12,19 @@ type DPConnComp = Input (Channel (Edge :<+> ConnectedComponents :<+> Eof))
 
 input' :: FilePath
        -> Stage
-            (WriteChannel Edge -> WriteChannel ConnectedComponents -> IO ())
-input' filePath = withInput @DPConnComp @IO
-  $ \edgeOut _ -> unfoldFile filePath edgeOut (toEdge . decodeUtf8)
+            (WriteChannel Edge -> WriteChannel ConnectedComponents -> DP st ())
+input' filePath = withInput @DPConnComp
+  $ \edgeOut _ -> withDP $ unfoldFile filePath edgeOut (toEdge . decodeUtf8)
 
-output' :: Stage (ReadChannel Edge -> ReadChannel ConnectedComponents -> IO ())
-output' = withOutput @DPConnComp @IO $ \_ cc -> forall cc print
+output' :: Stage (ReadChannel Edge -> ReadChannel ConnectedComponents -> DP st ())
+output' = withOutput @DPConnComp $ \_ cc -> withDP $ forall cc print
 
-generator' :: GeneratorStage ConnectedComponents IO DPConnComp Edge
+generator' :: GeneratorStage DPConnComp ConnectedComponents Edge st
 generator' =
-  let gen =
-        withGenerator @DPConnComp
-          @(Filter ConnectedComponents IO DPConnComp Edge)
-          @IO
-          $ genAction
+  let gen = withGenerator @DPConnComp genAction
   in  mkGenerator gen filterTemplate
 
-filterTemplate :: Filter ConnectedComponents IO DPConnComp Edge
+filterTemplate :: Filter DPConnComp ConnectedComponents Edge st
 filterTemplate = actor actor1 |>> actor actor2
 
 actor1 :: Edge
@@ -36,37 +32,37 @@ actor1 :: Edge
        -> ReadChannel ConnectedComponents
        -> WriteChannel Edge
        -> WriteChannel ConnectedComponents
-       -> StateT ConnectedComponents IO ()
+       -> StateT ConnectedComponents (DP st) ()
 actor1 _ readEdge _ writeEdge _ = 
   forall readEdge $ \e -> get >>= doActor e
  where
   doActor v conn
     | toConnectedComp v `intersect` conn = modify (toConnectedComp v <>)
-    | otherwise = liftIO $ push v writeEdge
+    | otherwise = push v writeEdge
 
 actor2 :: Edge
        -> ReadChannel Edge
        -> ReadChannel ConnectedComponents
        -> WriteChannel Edge
        -> WriteChannel ConnectedComponents
-       -> StateT ConnectedComponents IO ()
+       -> StateT ConnectedComponents (DP st) ()
 actor2 _ _ readCC _ writeCC = do 
   forall' readCC pushMemory $ \e -> get >>= doActor e
 
  where
-   pushMemory = get >>= liftIO . flip push writeCC
+   pushMemory = get >>= flip push writeCC
 
    doActor cc conn
     | cc `intersect` conn = modify (cc <>)
     | otherwise = push cc writeCC
 
 
-genAction :: Filter ConnectedComponents IO DPConnComp Edge
+genAction :: Filter DPConnComp ConnectedComponents Edge st
           -> ReadChannel Edge
           -> ReadChannel ConnectedComponents
           -> WriteChannel Edge
           -> WriteChannel ConnectedComponents
-          -> IO ()
+          -> DP st ()
 genAction filter' readEdge readCC _ writeCC = do
   results <- spawnFilterForAll filter'
                                toConnectedComp

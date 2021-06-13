@@ -24,6 +24,7 @@ ghc-options:
   - -Wno-unused-foralls
   - -fno-warn-deprecations
   - -fno-warn-orphans
+  - -freduction-depth=0 
 
 default-extensions:
   - ConstraintKinds

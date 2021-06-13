@@ -1,14 +1,16 @@
-{-# LANGUAGE AllowAmbiguousTypes     #-}
-{-# LANGUAGE UndecidableInstances    #-}
+{-# LANGUAGE AllowAmbiguousTypes  #-}
+{-# LANGUAGE InstanceSigs         #-}
+{-# LANGUAGE UndecidableInstances #-}
 module DynamicPipeline.Stage where
 
 import           Control.Concurrent.Async
-import           Control.Lens                             hiding ((<|))
+import           Control.Lens             hiding ((<|))
+import           Control.Monad.Indexed
 import           Data.HList
 import           Data.List.NonEmpty
 import           DynamicPipeline.Channel
 import           GHC.TypeLits
-import           Relude                                   as R
+import           Relude                   as R
 
 
 -- Type Level Functions: Boolean And
@@ -40,7 +42,115 @@ type family ValidDP (a :: Bool) :: Constraint where
                       ':$$: 'Text "Example: 'Input (Channel (Int :<+> Int)) :>> Generator (Channel (Int :<+> Int)) :>> Output'"
                     )
 
+-- Inductive Type Family for Expanding and building Input, Generator, Filter and Output Functions Signatures
+type family WithInput (a :: Type) (m :: Type -> Type) :: Type where
+  WithInput (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) m = WithInput (ChanIn inToGen) m
+  WithInput (ChanIn (a :<+> more)) m         = WriteChannel a -> WithInput (ChanIn more) m
+  WithInput (ChanIn Eof) m                   = m ()
+  WithInput (ChanOutIn (a :<+> more) ins) m  = ReadChannel a -> WithInput (ChanOutIn more ins) m
+  WithInput (ChanOutIn Eof ins) m            = WithInput (ChanIn ins) m
+  WithInput a _                              = TypeError
+                                                  ( 'Text "Invalid Semantic for Input Stage"
+                                                    ':$$: 'Text "in the type '"
+                                                    ':<>: 'ShowType a
+                                                    ':<>: 'Text "'"
+                                                    ':$$: 'Text "Language Grammar:"
+                                                    ':$$: 'Text "DP    = Input CHANS :>> Generator CHANS :>> Output"
+                                                    ':$$: 'Text "CHANS = Channel CH"
+                                                    ':$$: 'Text "CH    = Type | Type :<+> CH"
+                                                    ':$$: 'Text "Example: 'Input (Channel (Int :<+> Int)) :>> Generator (Channel (Int :<+> Int)) :>> Output'"
+                                                  )
+
+type family WithGenerator (a :: Type) (filter :: Type) (m :: Type -> Type) :: Type where
+  WithGenerator (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) filter m = filter -> WithGenerator (ChanOutIn inToGen genToOut) filter m
+  WithGenerator (ChanIn (a :<+> more)) filter m         = WriteChannel a -> WithGenerator (ChanIn more) filter m
+  WithGenerator (ChanIn Eof) filter m                   = m ()
+  WithGenerator (ChanOutIn (a :<+> more) ins) filter m  = ReadChannel a -> WithGenerator (ChanOutIn more ins) filter m
+  WithGenerator (ChanOutIn Eof ins) filter m            = WithGenerator (ChanIn ins) filter m
+  WithGenerator a _ _                                   = TypeError
+                                                            ( 'Text "Invalid Semantic for Generator Stage"
+                                                              ':$$: 'Text "in the type '"
+                                                              ':<>: 'ShowType a
+                                                              ':<>: 'Text "'"
+                                                              ':$$: 'Text "Language Grammar:"
+                                                              ':$$: 'Text "DP    = Input CHANS :>> Generator CHANS :>> Output"
+                                                              ':$$: 'Text "CHANS = Channel CH"
+                                                              ':$$: 'Text "CH    = Type | Type :<+> CH"
+                                                              ':$$: 'Text "Example: 'Input (Channel (Int :<+> Int)) :>> Generator (Channel (Int :<+> Int)) :>> Output'"
+                                                            )
+
+type family WithFilter (a :: Type) (param :: Type) (m :: Type -> Type) :: Type where
+  WithFilter (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) param m
+                                                    = param -> WithFilter (ChanOutIn inToGen genToOut) param m
+  WithFilter (ChanIn (a :<+> more)) param m         = WriteChannel a -> WithFilter (ChanIn more) param m
+  WithFilter (ChanIn Eof) param m                   = m ()
+  WithFilter (ChanOutIn (a :<+> more) ins) param m  = ReadChannel a -> WithFilter (ChanOutIn more ins) param m
+  WithFilter (ChanOutIn Eof ins) param m            = WithFilter (ChanIn ins) param m
+  WithFilter a _ _                                  = TypeError
+                                                ( 'Text "Invalid Semantic Semantic for Generator Stage"
+                                                  ':$$: 'Text "in the type '"
+                                                  ':<>: 'ShowType a
+                                                  ':<>: 'Text "'"
+                                                  ':$$: 'Text "Language Grammar:"
+                                                  ':$$: 'Text "DP    = Input CHANS :>> Generator CHANS :>> Output"
+                                                  ':$$: 'Text "CHANS = Channel CH"
+                                                  ':$$: 'Text "CH    = Type | Type :<+> CH"
+                                                  ':$$: 'Text "Example: 'Input (Channel (Int :<+> Int)) :>> Generator (Channel (Int :<+> Int)) :>> Output'"
+                                                )
+
+type family WithOutput (a :: Type) (m :: Type -> Type) :: Type where
+  WithOutput (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) m
+                                               = WithOutput (ChanOut genToOut) m
+  WithOutput (ChanOut (a :<+> more)) m         = ReadChannel a -> WithOutput (ChanOut more) m
+  WithOutput (ChanOut Eof) m                   = m ()
+  WithOutput a _                               = TypeError
+                                                  ( 'Text "Invalid Semantic for Output Stage"
+                                                    ':$$: 'Text "in the type '"
+                                                    ':<>: 'ShowType a
+                                                    ':<>: 'Text "'"
+                                                    ':$$: 'Text "Language Grammar:"
+                                                    ':$$: 'Text "DP    = Input CHANS :>> Generator CHANS :>> Output"
+                                                    ':$$: 'Text "CHANS = Channel CH"
+                                                    ':$$: 'Text "CH    = Type | Type :<+> CH"
+                                                    ':$$: 'Text "Example: 'Input (Channel (Int :<+> Int)) :>> Generator (Channel (Int :<+> Int)) :>> Output'"
+                                                  )
+
+
+
+-- Monad Index
+newtype Ix m i j a = Ix { unsafeRunIx :: m a }
+  deriving newtype (Functor, Applicative, Monad)
+
+instance Functor m => IxFunctor (Ix m) where
+  imap = fmap
+instance Applicative m => IxPointed (Ix m) where
+  ireturn = pure
+
+instance Applicative m => IxApplicative (Ix m) where
+  iap :: forall i j k a b. Ix m i j (a -> b)
+      -> Ix m j k a
+      -> Ix m i k b
+  iap = coerce $ (<*>) @m @a @b
+
+instance Monad m => IxMonad (Ix m) where
+  ibind :: forall i j k a b. (a -> Ix m j k b)
+        -> Ix m i j a
+        -> Ix m i k b
+  ibind = coerce $ (=<<) @m @a @b
+
 -- Stages Definitions
+data ChannelState = ChannelState
+  { channelNext   :: Nat
+  , channelOpened :: [Nat]
+  }
+
+newtype DP s a = DP
+  { runStage :: IO a
+  } deriving newtype (Functor, Applicative, Monad, MonadIO)
+
+withDP :: IO a -> DP s a
+withDP = DP
+
 -- Defunctionalization
 data Stage a where
   Stage :: Proxy a -> a -> Stage a
@@ -59,131 +169,155 @@ class EvalC l t | l -> t where
 instance forall a b. (a ~ b) => EvalC (Stage a) b where
   run (Stage _ f) = f
 
-{-# INLINE runStage #-}
-runStage :: forall (n :: HNat) f (xs :: [*]).
-            (HCurry' n f xs (IO ()), ArityFwd f n, ArityRev f n, CloseList xs)
-            => Stage f -> HList xs -> IO (Async ())
-runStage fn cIns = async (hUncurry (run fn) cIns >> closeList cIns)
+{-# INLINE runStageWith #-}
+runStageWith :: forall (n :: HNat) f (xs :: [*]) s.
+            (HCurry' n f xs (DP s ()), ArityFwd f n, ArityRev f n, CloseList xs)
+            => Stage f -> HList xs -> DP s (Async ())
+runStageWith fn cIns = withDP $ async (runStage (hUncurry (run fn) cIns) >> closeList cIns)
 
-{-# INLINE runStage' #-}
-runStage' :: forall (n :: HNat) f (xs :: [*]) r.
-          (HCurry' n f xs r, ArityFwd f n, ArityRev f n)
-          => Stage f -> HList xs -> r
-runStage' = hUncurry . run
-
-{-# INLINE runStage'' #-}
-runStage'' :: forall (n :: HNat) f (xs :: [*]) (ss :: [*]).
-            (HCurry' n f xs (IO ()), ArityFwd f n, ArityRev f n, CloseList ss)
-            => Stage f -> HList xs -> HList ss -> IO (Async ())
-runStage'' fn cIns cClose = async (hUncurry (run fn) cIns >> closeList cClose)
+{-# INLINE runStageWith' #-}
+runStageWith' :: forall (n :: HNat) f (xs :: [*]) (ss :: [*]) s.
+            (HCurry' n f xs (DP s ()), ArityFwd f n, ArityRev f n, CloseList ss)
+            => Stage f -> HList xs -> HList ss -> DP s (Async ())
+runStageWith' fn cIns cClose = withDP (async (runStage (hUncurry (run fn) cIns) >> closeList cClose))
 
 -- Generator and Filter specific Definitions
-data GeneratorStage s m a param = GeneratorStage
-  { _gsGenerator      :: Stage (WithGenerator a (Filter s m a param) m)
-  , _gsFilterTemplate :: Filter s m a param
+data DynamicPipeline dpDefinition filterState filterParam st =
+  DynamicPipeline
+    { input     :: Stage (WithInput dpDefinition (DP st))
+    , generator :: GeneratorStage dpDefinition filterState filterParam st
+    , output    :: Stage (WithOutput dpDefinition (DP st))
+    }
+
+data GeneratorStage dpDefinition filterState filterParam st = GeneratorStage
+  { _gsGenerator      :: Stage (WithGenerator dpDefinition (Filter dpDefinition filterState filterParam st) (DP st))
+  , _gsFilterTemplate :: Filter dpDefinition filterState filterParam st
   }
+newtype Actor dpDefinition filterState filterParam monadicAction = 
+  Actor {  unActor :: MonadState filterState monadicAction => Stage (WithFilter dpDefinition filterParam monadicAction) }
 
-{-# INLINE mkGenerator #-}
-mkGenerator :: Stage (WithGenerator a (Filter s m a param) m) -> Filter s m a param -> GeneratorStage s m a param
-mkGenerator = GeneratorStage
-
-newtype Actor s m a param = Actor {  unActor :: MonadState s m => Stage (WithFilter a param m) }
-
-newtype Filter s m a param = Filter { unFilter :: NonEmpty (Actor s (StateT s m) a param) }
+newtype Filter dpDefinition filterState filterParam st =
+  Filter { unFilter :: NonEmpty (Actor dpDefinition filterState filterParam (StateT filterState (DP st))) }
   deriving Generic
 
-instance Wrapped (Filter s m a param)
+instance Wrapped (Filter s' s a param)
+
+{-# INLINE mkGenerator #-}
+mkGenerator :: Stage (WithGenerator dpDefinition (Filter dpDefinition filterState filterParam st) (DP st)) 
+            -> Filter dpDefinition filterState filterParam st 
+            -> GeneratorStage dpDefinition filterState filterParam st
+mkGenerator = GeneratorStage
 
 {-# INLINE mkFilter #-}
-mkFilter :: forall s m a param. WithFilter a param (StateT s m) -> Filter s m a param
+mkFilter :: forall dpDefinition filterState filterParam st. WithFilter dpDefinition filterParam (StateT filterState (DP st))
+         -> Filter dpDefinition filterState filterParam st 
 mkFilter = Filter . single
 
 {-# INLINE single #-}
-single :: forall s m a param. WithFilter a param (StateT s m) -> NonEmpty (Actor s (StateT s m) a param)
+single :: forall dpDefinition filterState filterParam st.  WithFilter dpDefinition filterParam (StateT filterState (DP st)) 
+       -> NonEmpty (Actor dpDefinition filterState filterParam (StateT filterState (DP st)))
 single = one . actor
 
 {-# INLINE actor #-}
-actor :: forall s m a param. WithFilter a param m -> Actor s m a param
-actor = Actor . mkStage' @(WithFilter a param m)
+actor :: forall dpDefinition filterState filterParam st. WithFilter dpDefinition filterParam (StateT filterState (DP st)) 
+      -> Actor dpDefinition filterState filterParam (StateT filterState (DP st))
+actor = Actor . mkStage' @(WithFilter dpDefinition filterParam (StateT filterState (DP st)))
 
 {-# INLINE (|>>>) #-}
-(|>>>) :: forall s m a param. Actor s (StateT s m) a param -> Filter s m a param -> Filter s m a param
+(|>>>) :: forall dpDefinition filterState filterParam st. Actor dpDefinition filterState filterParam (StateT filterState (DP st)) 
+       -> Filter dpDefinition filterState filterParam st -> Filter dpDefinition filterState filterParam st 
 (|>>>) a f = f & _Wrapped' %~ (a <|)
 infixr 5 |>>>
 
 {-# INLINE (|>>) #-}
-(|>>) :: forall s m a param. Actor s (StateT s m) a param -> Actor s (StateT s m) a param -> Filter s m a param
+(|>>) :: forall dpDefinition filterState filterParam st. Actor dpDefinition filterState filterParam (StateT filterState (DP st)) 
+      -> Actor dpDefinition filterState filterParam (StateT filterState (DP st)) -> Filter dpDefinition filterState filterParam st 
 (|>>) a1 a2 = Filter (a1 <|one a2)
 infixr 5 |>>
 
 {-# INLINE runActor #-}
-runActor :: ( MonadState s m2
-            , HCurry' n (WithFilter a param m2) xs r
-            , ArityFwd (WithFilter a param m2) n
-            , ArityRev (WithFilter a param m2) n
-            ) => Actor s m2 a param -> HList xs -> r
-runActor ac = runStage' (unActor ac)
+runActor :: ( MonadState filterState monadicAction
+            , HCurry' n (WithFilter dpDefinition filterParam monadicAction) xs r
+            , ArityFwd (WithFilter dpDefinition filterParam monadicAction) n
+            , ArityRev (WithFilter dpDefinition filterParam monadicAction) n
+            ) => Actor dpDefinition filterState filterParam monadicAction -> HList xs -> r
+runActor = hUncurry . run . unActor
 
 {-# INLINE runFilter #-}
-runFilter :: ( MonadIO m1, Monad m2, CloseList ss
-             , HCurry' n (WithFilter a param (StateT s1 m2)) xs (StateT s2 IO ())
-             , ArityFwd (WithFilter a param (StateT s1 m2)) n
-             , ArityRev (WithFilter a param (StateT s1 m2)) n
-             ) => Filter s1 m2 a param -> s2 -> HList xs -> HList ss -> m1 (Async ())
-runFilter f s clist cClose = liftIO $ async $ do
-  flip evalStateT s . mapM_ (`runActor` clist) . unFilter $ f
-  liftIO $ closeList cClose
+runFilter :: ( CloseList ss
+             , HCurry' n (WithFilter dpDefinition filterParam (StateT filterState (DP st))) xs (StateT filterState2 (DP st) ())
+             , ArityFwd (WithFilter dpDefinition filterParam (StateT filterState (DP st))) n
+             , ArityRev (WithFilter dpDefinition filterParam (StateT filterState (DP st))) n
+             ) => Filter dpDefinition filterState filterParam st -> filterState2 -> HList xs -> HList ss -> DP st (Async ())
+runFilter f s clist cClose = DP $ async $ do
+  void . runStage . flip evalStateT s  . mapM_ (`runActor` clist) . unFilter $ f
+  closeList cClose
 
 {-# INLINE withInput #-}
-withInput :: forall (a :: Type) (m :: Type -> Type). WithInput a m -> Stage (WithInput a m)
-withInput = mkStage' @(WithInput a m)
+withInput :: forall (a :: Type) s. WithInput a (DP s) -> Stage (WithInput a (DP s))
+withInput = mkStage' @(WithInput a (DP s))
 
 {-# INLINE withGenerator #-}
-withGenerator :: forall (a :: Type) (filter :: Type) (m :: Type -> Type). WithGenerator a filter m -> Stage (WithGenerator a filter m)
-withGenerator = mkStage' @(WithGenerator a filter m)
+withGenerator :: forall (a :: Type) s (filter :: Type). WithGenerator a filter (DP s) -> Stage (WithGenerator a filter (DP s))
+withGenerator = mkStage' @(WithGenerator a filter (DP s))
 
 {-# INLINE withOutput #-}
-withOutput :: forall (a :: Type) (m :: Type -> Type). WithOutput a m -> Stage (WithOutput a m)
-withOutput = mkStage' @(WithOutput a m)
+withOutput :: forall (a :: Type) s. WithOutput a (DP s) -> Stage (WithOutput a (DP s))
+withOutput = mkStage' @(WithOutput a (DP s))
 
-data DynamicPipeline a s param = ValidDP (IsDP a) => DynamicPipeline
-  { input     :: Stage (WithInput a IO)
-  , generator :: GeneratorStage s IO a param
-  , output    :: Stage (WithOutput a IO)
-  }
-
-{-# INLINE mkDP #-}
-mkDP :: forall a s param. ValidDP (IsDP a) => Stage (WithInput a IO) -> GeneratorStage s IO a param -> Stage (WithOutput a IO) -> DynamicPipeline a s param
-mkDP = DynamicPipeline @a
+{-# INLINE mkDP' #-}
+mkDP' :: forall dpDefinition filterState filterParam st.
+         Stage (WithInput dpDefinition (DP st))
+      -> GeneratorStage dpDefinition filterState filterParam st 
+      -> Stage (WithOutput dpDefinition (DP st))
+      -> DynamicPipeline dpDefinition filterState filterParam st
+mkDP' = DynamicPipeline @dpDefinition
 
 -- Hiding DP Constraint for running DP
-type DPConstraint a s param filter r2 r3 l1 r4 l2 t2 s1 t1 s2 t5 l3 l4 = (MkChans a
-                                                                        , HChan a ~ r3 t2
-                                                                        , Filter s IO a param ~ filter
-                                                                        , CloseList l3
-                                                                        , CloseList l4
-                                                                        , CloseList (HAppendListR l1 l2)
-                                                                        , ArityRev (WithInput a IO) (HLength (ExpandInputToCh a))
-                                                                        , ArityFwd (WithInput a IO) (HLength (ExpandInputToCh a))
-                                                                        , HCurry' (HLength (ExpandInputToCh a)) (WithInput a IO) l3 (IO ())
-                                                                        , ArityRev (WithGenerator a filter IO) (HLength (ExpandGenToCh a filter))
-                                                                        , ArityFwd (WithGenerator a filter IO) (HLength (ExpandGenToCh a filter))
-                                                                        , HCurry' (HLength (ExpandGenToCh a filter)) (WithGenerator a filter IO) (filter ': HAppendListR l1 l2) (IO ())
-                                                                        , ArityRev (WithOutput a IO) (HLength (ExpandOutputToCh a))
-                                                                        , ArityFwd (WithOutput a IO) (HLength (ExpandOutputToCh a))
-                                                                        , HCurry' (HLength (ExpandOutputToCh a)) (WithOutput a IO) l4 (IO ())
-                                                                        , AllChans r2 r3 l1 r4 l2 t2 s1 t1 s2 t5 l3 l4)
+type DPConstraint dpDefinition filterState st filterParam filter iparams gparams oparams r2 r3 l1 r4 l2 t2 s1 t1 s2 t5 l3 l4 =
+  ( MkChans dpDefinition
+  , HChan dpDefinition ~ r3 t2
+  , Filter dpDefinition filterState filterParam st ~ filter
+  , CloseList l3
+  , CloseList l4
+  , CloseList (HAppendListR l1 l2)
+  , iparams ~ WithInput dpDefinition (DP st)
+  , gparams ~ WithGenerator dpDefinition filter (DP st)
+  , oparams ~ WithOutput dpDefinition (DP st)
+  , ArityRev iparams (HLength (ExpandInputToCh dpDefinition))
+  , ArityFwd iparams (HLength (ExpandInputToCh dpDefinition))
+  , HCurry' (HLength (ExpandInputToCh dpDefinition)) iparams l3 (DP st ())
+  , ArityRev gparams (HLength (ExpandGenToCh dpDefinition filter))
+  , ArityFwd gparams (HLength (ExpandGenToCh dpDefinition filter))
+  , HCurry' (HLength (ExpandGenToCh dpDefinition filter)) gparams (filter ': HAppendListR l1 l2) (DP st ())
+  , ArityRev oparams (HLength (ExpandOutputToCh dpDefinition))
+  , ArityFwd oparams (HLength (ExpandOutputToCh dpDefinition))
+  , HCurry' (HLength (ExpandOutputToCh dpDefinition)) oparams l4 (DP st ())
+  , AllChans r2 r3 l1 r4 l2 t2 s1 t1 s2 t5 l3 l4)
+
+{-# INLINE buildDPProg #-}
+buildDPProg :: forall dpDefinition filterState st filterParam filter iparams gparams oparams r2 r3 l1 r4 l2 t2 s1 t1 s2 t5 l3 l4.
+               DPConstraint dpDefinition filterState st filterParam filter iparams gparams oparams r2 r3 l1 r4 l2 t2 s1 t1 s2 t5 l3 l4
+            => DynamicPipeline dpDefinition filterState filterParam st -> DP st ()
+buildDPProg DynamicPipeline{..} = do
+  (cIns, cGen, cOut) <- inGenOut <$> withDP (makeChans @dpDefinition)
+  let genWithFilter   = _gsFilterTemplate generator .*. cGen
+  runStageWith input cIns
+    >> runStageWith' @(HLength (ExpandGenToCh dpDefinition filter)) @gparams (_gsGenerator generator) genWithFilter cGen
+    >> runStageWith output cOut >>= DP . wait
+
+{-# INLINE mkDP #-}
+mkDP :: forall dpDefinition filterState st filterParam filter iparams gparams oparams r2 r3 l1 r4 l2 t2 s1 t1 s2 t5 l3 l4.
+        DPConstraint dpDefinition filterState st filterParam filter iparams gparams oparams r2 r3 l1 r4 l2 t2 s1 t1 s2 t5 l3 l4
+     => Stage (WithInput dpDefinition (DP st))
+     -> GeneratorStage dpDefinition filterState filterParam st
+     -> Stage (WithOutput dpDefinition (DP st))
+     -> DP st ()
+mkDP inS gS oS = buildDPProg (mkDP' inS gS oS)
 
 {-# INLINE runDP #-}
-runDP :: forall a s param filter r2 r3 l1 r4 l2 t2 s1 t1 s2 t5 l3 l4.
-         DPConstraint a s param filter r2 r3 l1 r4 l2 t2 s1 t1 s2 t5 l3 l4
-       => DynamicPipeline a s param -> IO ()
-runDP DynamicPipeline{..} = do
-  (cIns, cGen, cOut) <- inGenOut <$> makeChans @a
-  let genWithFilter   = _gsFilterTemplate generator .*. cGen
-  runStage input cIns
-    >> runStage'' @(HLength (ExpandGenToCh a filter)) @(WithGenerator a filter IO) (_gsGenerator generator) genWithFilter cGen
-    >> runStage output cOut >>= wait
+runDP :: (forall s. DP s a) -> IO a
+runDP = runStage
 
 -- Closable Automatic Write Channels
 data NotClose (a :: Type)
@@ -207,59 +341,59 @@ instance IsClosable (ReadChannel a) where
   close = const $ pure ()
 
 
-type SpawnFilterConstraint a b s param l r t l1 b0 l2 l3 b2 b3 l4 =
-                ( MkChans (ChansFilter a)
-                , FilterChans r (HList l3) t (HList (ReadChannel b : l1))
+type SpawnFilterConstraint dpDefinition readElem st filterState filterParam l r t l1 b0 l2 l3 b2 b3 l4 =
+                ( MkChans (ChansFilter dpDefinition)
+                , FilterChans r (HList l3) t (HList (ReadChannel readElem : l1))
                 , l1 ~ l
-                , CloseList (ReadChannel b ': l4)
+                , CloseList (ReadChannel readElem ': l4)
                 , HAppendList l l3
                 , l4 ~ HAppendListR l l3
-                , l2 ~ (b ': ReadChannel b ': l4)
-                , HChan (ChansFilter a) ~ r t
-                , WithFilter a param (StateT s IO) ~ (b2 -> ReadChannel b2 -> b3)
-                , HLength (ExpandFilterToCh a param) ~ HLength l2
-                , HCurry' (HLength l2) (WithFilter a param (StateT s IO)) l2 (StateT s IO ())
-                , ArityFwd (WithFilter a param (StateT s IO)) (HLength (ExpandFilterToCh a param))
+                , l2 ~ (readElem ': ReadChannel readElem ': l4)
+                , HChan (ChansFilter dpDefinition) ~ r t
+                , WithFilter dpDefinition filterParam (StateT filterState (DP st)) ~ (b2 -> ReadChannel b2 -> b3)
+                , HLength (ExpandFilterToCh dpDefinition filterParam) ~ HLength l2
+                , HCurry' (HLength l2) (WithFilter dpDefinition filterParam (StateT filterState (DP st))) l2 (StateT filterState (DP st) ())
+                , ArityFwd (WithFilter dpDefinition filterParam (StateT filterState (DP st))) (HLength (ExpandFilterToCh dpDefinition filterParam))
                 , ArityRev b3 (HLength l4)
                 )
 
 {-# INLINE spawnFilterForAll #-}
-spawnFilterForAll :: forall a b s param l r t l1 b0 l2 l3 b2 b3 l4.
-                     SpawnFilterConstraint a b s param l r t l1 b0 l2 l3 b2 b3 l4
-                  => Filter s IO a param -- Filter Template
-                  -> (b -> s) -- Given the First element in this Filter Instance how to Initiate Internal Filter State (Memory)
-                  -> ReadChannel b -- Main ReadChannel to feed filter
+spawnFilterForAll :: forall dpDefinition readElem st filterState filterParam l r t l1 b0 l2 l3 b2 b3 l4.
+                     SpawnFilterConstraint dpDefinition readElem st filterState filterParam l r t l1 b0 l2 l3 b2 b3 l4
+                  => Filter dpDefinition filterState filterParam st  -- Filter Template
+                  -> (readElem -> filterState) -- Given the First element in this Filter Instance how to Initiate Internal Filter State (Memory)
+                  -> ReadChannel readElem -- Main ReadChannel to feed filter
                   -> HList l -- HList with the rest of the ReadChannels if There are needed or HNil if it only contians 1 read channel
-                  -> IO (HList l) -- Rreturn the list of input Channels with the results to be read for the Generator at the end
+                  -> DP st (HList l) -- Rreturn the list of input Channels with the results to be read for the Generator at the end
 spawnFilterForAll filter' initState = spawnFilterForAll' filter' initState (const $ pure ())
 
 {-# INLINE spawnFilterForAll' #-}
-spawnFilterForAll' :: forall a b s param l r t l1 b0 l2 l3 b2 b3 l4.
-                     SpawnFilterConstraint a b s param l r t l1 b0 l2 l3 b2 b3 l4
-                  => Filter s IO a param -- Filter Template
-                  -> (b -> s) -- Given the First element in this Filter Instance how to Initiate Internal Filter State (Memory)
-                  -> (b -> IO ()) -- For each element that the Filter is consuming allow to do something outside the filter with that element. For example trace or debug
-                  -> ReadChannel b -- Main ReadChannel to feed filter
-                  -> HList l -- HList with the rest of the ReadChannels if There are needed or HNil if it only contians 1 read channel
-                  -> IO (HList l) -- Rreturn the list of input Channels with the results to be read for the Generator at the end
+spawnFilterForAll' :: forall dpDefinition readElem st filterState filterParam l r t l1 b0 l2 l3 b2 b3 l4.
+                      SpawnFilterConstraint dpDefinition readElem st filterState filterParam l r t l1 b0 l2 l3 b2 b3 l4
+                   => Filter dpDefinition filterState filterParam st  -- Filter Template
+                   -> (readElem -> filterState) -- Given the First element in this Filter Instance how to Initiate Internal Filter State (Memory)
+                   -> (readElem -> DP st ()) -- For each element that the Filter is consuming allow to do something outside the filter with that element. For example trace or debug
+                   -> ReadChannel readElem -- Main ReadChannel to feed filter
+                   -> HList l -- HList with the rest of the ReadChannels if There are needed or HNil if it only contians 1 read channel
+                   -> DP st (HList l) -- Rreturn the list of input Channels with the results to be read for the Generator at the end
 spawnFilterForAll' filter' initState = spawnFilterWith filter' initState (const True)
 
 {-# INLINE spawnFilterWith #-}
-spawnFilterWith :: forall a b s param l r t l1 b0 l2 l3 b2 b3 l4.
-                   SpawnFilterConstraint a b s param l r t l1 b0 l2 l3 b2 b3 l4
-                => Filter s IO a param
-                -> (b -> s) -- Given the First element in this Filter Instance how to Initiate Internal Filter State (Memory)
-                -> (b -> Bool) -- Given a new Element determine if we need to interpose a new Filter or not
-                -> (b -> IO ()) -- For each element that the Filter is consuming allow to do something outside the filter with that element. For example trace or debug
-                -> ReadChannel b -- Main ReadChannel to feed filter
-                -> HList l -- HList with the rest of the ReadChannels if There are needed or HNil if it only contians 1 read channel
-                -> IO (HList l) -- Rreturn the list of input Channels with the results to be read for the Generator at the end
+spawnFilterWith  :: forall dpDefinition readElem st filterState filterParam l r t l1 b0 l2 l3 b2 b3 l4.
+                    SpawnFilterConstraint dpDefinition readElem st filterState filterParam l r t l1 b0 l2 l3 b2 b3 l4
+                 => Filter dpDefinition filterState filterParam st  -- Filter Template
+                 -> (readElem -> filterState) -- Given the First element in this Filter Instance how to Initiate Internal Filter State (Memory)
+                 -> (readElem -> Bool) -- Given a new Element determine if we need to interpose a new Filter or not
+                 -> (readElem -> DP st ()) -- For each element that the Filter is consuming allow to do something outside the filter with that element. For example trace or debug
+                 -> ReadChannel readElem -- Main ReadChannel to feed filter
+                 -> HList l -- HList with the rest of the ReadChannels if There are needed or HNil if it only contians 1 read channel
+                 -> DP st (HList l) -- Rreturn the list of input Channels with the results to be read for the Generator at the end
 spawnFilterWith = loopSpawn
 
   where
     loopSpawn filter'' initState' spawnIf' onElem' cin' restIns' =
       maybe (pure restIns') (whenNewElem cin' restIns' filter'' initState' spawnIf' onElem')
-      =<< pull cin'
+      =<< DP (pull cin')
 
     whenNewElem cin' restIns' filter'' initState' spawnIf' onElem' =
       uncurry (loopSpawn filter'' initState' spawnIf' onElem') <=< doOnElem cin' restIns' filter'' initState' spawnIf' onElem'
@@ -268,7 +402,7 @@ spawnFilterWith = loopSpawn
       onElem' elem'
       if spanwIf' elem'
         then do
-          (reads', writes' :: HList l3) <- getFilterChannels <$> makeChans @(ChansFilter a)
+          (reads', writes' :: HList l3) <- getFilterChannels <$> DP (makeChans @(ChansFilter dpDefinition))
           let hlist = elem' .*. cin' .*. (restIns' `hAppendList` writes')
           void $ runFilter filter'' (initState' elem') hlist (cin' .*. (restIns' `hAppendList` writes'))
           return (hHead reads', hTail reads')

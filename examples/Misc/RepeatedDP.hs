@@ -6,33 +6,33 @@ import           Relude
 
 type DPExample = Input (Channel (Int :<+> Eof)) :>> Generator (Channel (Int :<+> Eof)) :>> Output
 
-input' :: Stage (WriteChannel Int -> IO ())
-input' = withInput @DPExample @IO $ \cout -> unfoldT ([1 .. 1000] <> [1 .. 1000]) cout identity
+input' :: forall k (s :: k). Stage (WriteChannel Int -> DP s ())
+input' = withInput @DPExample $ \cout -> unfoldT ([1 .. 1000] <> [1 .. 1000]) cout identity
 
-generator' :: GeneratorStage (Maybe Int) IO DPExample Int
+generator' :: GeneratorStage DPExample (Maybe Int) Int s
 generator' =
-  let gen = withGenerator @DPExample @(Filter (Maybe Int) IO DPExample Int) @IO $ genAction
+  let gen = withGenerator @DPExample genAction
   in  mkGenerator gen filterTemp
 
-genAction :: Filter (Maybe Int) IO DPExample Int
+genAction :: Filter DPExample (Maybe Int) Int s 
           -> ReadChannel Int
           -> WriteChannel Int
-          -> IO ()
+          -> DP s ()
 genAction filter' cin cout = 
   void $ spawnFilterForAll' filter' Just (`push` cout) cin HNil
 
-filterTemp :: Filter (Maybe Int) IO DPExample Int
+filterTemp :: Filter DPExample (Maybe Int) Int s 
 filterTemp = mkFilter actorRepeted
 
 actorRepeted :: Int
              -> ReadChannel Int
              -> WriteChannel Int
-             -> StateT (Maybe Int) IO ()
+             -> StateT (Maybe Int) (DP s) ()
 actorRepeted i rc wc = do
   liftIO $ forall rc $ \e -> if e /= i then push e wc else pure ()
 
-output' :: Stage (ReadChannel Int -> IO ())
-output' = withOutput @DPExample @IO $ flip forall print
+output' :: Stage (ReadChannel Int -> DP s ())
+output' = withOutput @DPExample $ flip forall print
 
 program :: IO ()
 program = runDP $ mkDP @DPExample input' generator' output'

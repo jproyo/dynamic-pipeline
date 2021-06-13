@@ -32,6 +32,8 @@ import DynamicPipeline.Stage
       Stage,
       ValidDP,
       IsDP,
+      DP, 
+      withDP, 
       mkGenerator,
       mkFilter,
       single,
