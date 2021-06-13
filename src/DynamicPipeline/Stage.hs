@@ -19,7 +19,7 @@ type family And (a :: Bool) (b :: Bool) :: Bool where
   And a b         = 'False
 
 -- Type Level Functions: Validation of DP Construct at Type Level
-type family IsDP (a :: k) :: Bool where
+type family IsDP (dpDefinition :: k) :: Bool where
   IsDP (Input (Channel inToGen)
         :>> Generator (Channel genToOut)
         :>> Output)
@@ -43,53 +43,55 @@ type family ValidDP (a :: Bool) :: Constraint where
                     )
 
 -- Inductive Type Family for Expanding and building Input, Generator, Filter and Output Functions Signatures
-type family WithInput (a :: Type) (m :: Type -> Type) :: Type where
-  WithInput (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) m = WithInput (ChanIn inToGen) m
-  WithInput (ChanIn (a :<+> more)) m         = WriteChannel a -> WithInput (ChanIn more) m
-  WithInput (ChanIn Eof) m                   = m ()
-  WithInput (ChanOutIn (a :<+> more) ins) m  = ReadChannel a -> WithInput (ChanOutIn more ins) m
-  WithInput (ChanOutIn Eof ins) m            = WithInput (ChanIn ins) m
-  WithInput a _                              = TypeError
-                                                  ( 'Text "Invalid Semantic for Input Stage"
-                                                    ':$$: 'Text "in the type '"
-                                                    ':<>: 'ShowType a
-                                                    ':<>: 'Text "'"
-                                                    ':$$: 'Text "Language Grammar:"
-                                                    ':$$: 'Text "DP    = Input CHANS :>> Generator CHANS :>> Output"
-                                                    ':$$: 'Text "CHANS = Channel CH"
-                                                    ':$$: 'Text "CH    = Type | Type :<+> CH"
-                                                    ':$$: 'Text "Example: 'Input (Channel (Int :<+> Int)) :>> Generator (Channel (Int :<+> Int)) :>> Output'"
-                                                  )
+type family WithInput (dpDefinition :: Type) (monadicAction :: Type -> Type) :: Type where
+  WithInput (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) monadicAction 
+                                                                    = WithInput (ChanIn inToGen) monadicAction
+  WithInput (ChanIn (dpDefinition :<+> more)) monadicAction         = WriteChannel dpDefinition -> WithInput (ChanIn more) monadicAction
+  WithInput (ChanIn Eof) monadicAction                              = monadicAction ()
+  WithInput (ChanOutIn (dpDefinition :<+> more) ins) monadicAction  = ReadChannel dpDefinition -> WithInput (ChanOutIn more ins) monadicAction
+  WithInput (ChanOutIn Eof ins) monadicAction                       = WithInput (ChanIn ins) monadicAction
+  WithInput dpDefinition _                                          = TypeError
+                                                                        ( 'Text "Invalid Semantic for Input Stage"
+                                                                          ':$$: 'Text "in the DP Definition '"
+                                                                          ':<>: 'ShowType dpDefinition
+                                                                          ':<>: 'Text "'"
+                                                                          ':$$: 'Text "Language Grammar:"
+                                                                          ':$$: 'Text "DP    = Input CHANS :>> Generator CHANS :>> Output"
+                                                                          ':$$: 'Text "CHANS = Channel CH"
+                                                                          ':$$: 'Text "CH    = Type | Type :<+> CH"
+                                                                          ':$$: 'Text "Example: 'Input (Channel (Int :<+> Int)) :>> Generator (Channel (Int :<+> Int)) :>> Output'"
+                                                                        )
 
-type family WithGenerator (a :: Type) (filter :: Type) (m :: Type -> Type) :: Type where
-  WithGenerator (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) filter m = filter -> WithGenerator (ChanOutIn inToGen genToOut) filter m
-  WithGenerator (ChanIn (a :<+> more)) filter m         = WriteChannel a -> WithGenerator (ChanIn more) filter m
-  WithGenerator (ChanIn Eof) filter m                   = m ()
-  WithGenerator (ChanOutIn (a :<+> more) ins) filter m  = ReadChannel a -> WithGenerator (ChanOutIn more ins) filter m
-  WithGenerator (ChanOutIn Eof ins) filter m            = WithGenerator (ChanIn ins) filter m
-  WithGenerator a _ _                                   = TypeError
-                                                            ( 'Text "Invalid Semantic for Generator Stage"
-                                                              ':$$: 'Text "in the type '"
-                                                              ':<>: 'ShowType a
-                                                              ':<>: 'Text "'"
-                                                              ':$$: 'Text "Language Grammar:"
-                                                              ':$$: 'Text "DP    = Input CHANS :>> Generator CHANS :>> Output"
-                                                              ':$$: 'Text "CHANS = Channel CH"
-                                                              ':$$: 'Text "CH    = Type | Type :<+> CH"
-                                                              ':$$: 'Text "Example: 'Input (Channel (Int :<+> Int)) :>> Generator (Channel (Int :<+> Int)) :>> Output'"
-                                                            )
+type family WithGenerator (a :: Type) (filter :: Type) (monadicAction :: Type -> Type) :: Type where
+  WithGenerator (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) filter monadicAction 
+                                                                    = filter -> WithGenerator (ChanOutIn inToGen genToOut) filter monadicAction
+  WithGenerator (ChanIn (a :<+> more)) filter monadicAction         = WriteChannel a -> WithGenerator (ChanIn more) filter monadicAction
+  WithGenerator (ChanIn Eof) filter monadicAction                   = monadicAction ()
+  WithGenerator (ChanOutIn (a :<+> more) ins) filter monadicAction  = ReadChannel a -> WithGenerator (ChanOutIn more ins) filter monadicAction
+  WithGenerator (ChanOutIn Eof ins) filter monadicAction            = WithGenerator (ChanIn ins) filter monadicAction
+  WithGenerator dpDefinition _ _                                     = TypeError
+                                                                        ( 'Text "Invalid Semantic for Generator Stage"
+                                                                          ':$$: 'Text "in the DP Definition '"
+                                                                          ':<>: 'ShowType dpDefinition
+                                                                          ':<>: 'Text "'"
+                                                                          ':$$: 'Text "Language Grammar:"
+                                                                          ':$$: 'Text "DP    = Input CHANS :>> Generator CHANS :>> Output"
+                                                                          ':$$: 'Text "CHANS = Channel CH"
+                                                                          ':$$: 'Text "CH    = Type | Type :<+> CH"
+                                                                          ':$$: 'Text "Example: 'Input (Channel (Int :<+> Int)) :>> Generator (Channel (Int :<+> Int)) :>> Output'"
+                                                                        )
 
-type family WithFilter (a :: Type) (param :: Type) (m :: Type -> Type) :: Type where
-  WithFilter (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) param m
-                                                    = param -> WithFilter (ChanOutIn inToGen genToOut) param m
-  WithFilter (ChanIn (a :<+> more)) param m         = WriteChannel a -> WithFilter (ChanIn more) param m
-  WithFilter (ChanIn Eof) param m                   = m ()
-  WithFilter (ChanOutIn (a :<+> more) ins) param m  = ReadChannel a -> WithFilter (ChanOutIn more ins) param m
+type family WithFilter (dpDefinition :: Type) (param :: Type) (monadicAction :: Type -> Type) :: Type where
+  WithFilter (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) param monadicAction
+                                                    = param -> WithFilter (ChanOutIn inToGen genToOut) param monadicAction
+  WithFilter (ChanIn (dpDefinition :<+> more)) param monadicAction         = WriteChannel dpDefinition -> WithFilter (ChanIn more) param monadicAction
+  WithFilter (ChanIn Eof) param monadicAction                   = monadicAction ()
+  WithFilter (ChanOutIn (dpDefinition :<+> more) ins) param monadicAction  = ReadChannel dpDefinition -> WithFilter (ChanOutIn more ins) param monadicAction
   WithFilter (ChanOutIn Eof ins) param m            = WithFilter (ChanIn ins) param m
-  WithFilter a _ _                                  = TypeError
+  WithFilter dpDefinition _ _                                  = TypeError
                                                 ( 'Text "Invalid Semantic Semantic for Generator Stage"
-                                                  ':$$: 'Text "in the type '"
-                                                  ':<>: 'ShowType a
+                                                  ':$$: 'Text "in the DP Definition '"
+                                                  ':<>: 'ShowType dpDefinition
                                                   ':<>: 'Text "'"
                                                   ':$$: 'Text "Language Grammar:"
                                                   ':$$: 'Text "DP    = Input CHANS :>> Generator CHANS :>> Output"
@@ -98,22 +100,22 @@ type family WithFilter (a :: Type) (param :: Type) (m :: Type -> Type) :: Type w
                                                   ':$$: 'Text "Example: 'Input (Channel (Int :<+> Int)) :>> Generator (Channel (Int :<+> Int)) :>> Output'"
                                                 )
 
-type family WithOutput (a :: Type) (m :: Type -> Type) :: Type where
-  WithOutput (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) m
-                                               = WithOutput (ChanOut genToOut) m
-  WithOutput (ChanOut (a :<+> more)) m         = ReadChannel a -> WithOutput (ChanOut more) m
-  WithOutput (ChanOut Eof) m                   = m ()
-  WithOutput a _                               = TypeError
-                                                  ( 'Text "Invalid Semantic for Output Stage"
-                                                    ':$$: 'Text "in the type '"
-                                                    ':<>: 'ShowType a
-                                                    ':<>: 'Text "'"
-                                                    ':$$: 'Text "Language Grammar:"
-                                                    ':$$: 'Text "DP    = Input CHANS :>> Generator CHANS :>> Output"
-                                                    ':$$: 'Text "CHANS = Channel CH"
-                                                    ':$$: 'Text "CH    = Type | Type :<+> CH"
-                                                    ':$$: 'Text "Example: 'Input (Channel (Int :<+> Int)) :>> Generator (Channel (Int :<+> Int)) :>> Output'"
-                                                  )
+type family WithOutput (dpDefinition :: Type) (monadicAction :: Type -> Type) :: Type where
+  WithOutput (Input (Channel inToGen) :>> Generator (Channel genToOut) :>> Output) monadicAction
+                                                                = WithOutput (ChanOut genToOut) monadicAction
+  WithOutput (ChanOut (dpDefinition :<+> more)) monadicAction   = ReadChannel dpDefinition -> WithOutput (ChanOut more) monadicAction
+  WithOutput (ChanOut Eof) monadicAction                        = monadicAction ()
+  WithOutput dpDefinition _                                     = TypeError
+                                                                    ( 'Text "Invalid Semantic for Output Stage"
+                                                                      ':$$: 'Text "in the DP Definition '"
+                                                                      ':<>: 'ShowType dpDefinition
+                                                                      ':<>: 'Text "'"
+                                                                      ':$$: 'Text "Language Grammar:"
+                                                                      ':$$: 'Text "DP    = Input CHANS :>> Generator CHANS :>> Output"
+                                                                      ':$$: 'Text "CHANS = Channel CH"
+                                                                      ':$$: 'Text "CH    = Type | Type :<+> CH"
+                                                                      ':$$: 'Text "Example: 'Input (Channel (Int :<+> Int)) :>> Generator (Channel (Int :<+> Int)) :>> Output'"
+                                                                    )
 
 
 
@@ -254,16 +256,18 @@ runFilter f s clist cClose = DP $ async $ do
   closeList cClose
 
 {-# INLINE withInput #-}
-withInput :: forall (a :: Type) s. WithInput a (DP s) -> Stage (WithInput a (DP s))
-withInput = mkStage' @(WithInput a (DP s))
+withInput :: forall (dpDefinition :: Type) st. WithInput dpDefinition (DP st) -> Stage (WithInput dpDefinition (DP st))
+withInput = mkStage' @(WithInput dpDefinition (DP st))
 
 {-# INLINE withGenerator #-}
-withGenerator :: forall (a :: Type) s (filter :: Type). WithGenerator a filter (DP s) -> Stage (WithGenerator a filter (DP s))
-withGenerator = mkStage' @(WithGenerator a filter (DP s))
+withGenerator :: forall (dpDefinition :: Type) (filter :: Type) st. WithGenerator dpDefinition filter (DP st) 
+              -> Stage (WithGenerator dpDefinition filter (DP st))
+withGenerator = mkStage' @(WithGenerator dpDefinition filter (DP st))
 
 {-# INLINE withOutput #-}
-withOutput :: forall (a :: Type) s. WithOutput a (DP s) -> Stage (WithOutput a (DP s))
-withOutput = mkStage' @(WithOutput a (DP s))
+withOutput :: forall (dpDefinition :: Type) st. WithOutput dpDefinition (DP st) 
+           -> Stage (WithOutput dpDefinition (DP st))
+withOutput = mkStage' @(WithOutput dpDefinition (DP st))
 
 {-# INLINE mkDP' #-}
 mkDP' :: forall dpDefinition filterState filterParam st.
@@ -316,7 +320,7 @@ mkDP :: forall dpDefinition filterState st filterParam filter iparams gparams op
 mkDP inS gS oS = buildDPProg (mkDP' inS gS oS)
 
 {-# INLINE runDP #-}
-runDP :: (forall s. DP s a) -> IO a
+runDP :: (forall st. DP st a) -> IO a
 runDP = runStage
 
 -- Closable Automatic Write Channels
