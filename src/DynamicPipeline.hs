@@ -1,11 +1,20 @@
+-- |
+-- Module      : DynamicPipeline
+-- Copyright   : (c) 2021 Juan Pablo Royo Sales
+--
+-- License     : BSD3
+-- Maintainer  : juanpablo.royo@gmail.com
+-- Stability   : experimental
+-- Portability : GHC
+--
 module DynamicPipeline 
     ( module DynamicPipeline.Stage
     , module DynamicPipeline.Channel
-    , (.*.)
+    , (.*.), HList(HNil), hHead
     )
     where
 
-import Data.HList ((.*.))
+import Data.HList ((.*.), HList(HNil), hHead)
 import DynamicPipeline.Channel
     ( Eof,
       Output,

@@ -1,3 +1,12 @@
+-- |
+-- Module      : DynamicPipeline.Channel
+-- Copyright   : (c) 2021 Juan Pablo Royo Sales
+--
+-- License     : BSD3
+-- Maintainer  : juanpablo.royo@gmail.com
+-- Stability   : experimental
+-- Portability : GHC
+--
 {-# LANGUAGE AllowAmbiguousTypes  #-}
 {-# LANGUAGE UndecidableInstances #-}
 module DynamicPipeline.Channel where
@@ -63,9 +72,15 @@ unfoldT ts writeChannel fn = forM_ ts (flip push writeChannel . fn)
 
 
 -- This types are for building DP Declaration
+
+-- |'Input' contains the 'Input' Stage definition with its Channels in the DP definition Flow
+-- | 'a' has the for 
 data Input (a :: Type)
+-- |'Eof' is the __End of Channel__ mark in the DP Definition Flow
 data Generator (a :: Type)
+-- |'Eof' is the __End of Channel__ mark in the DP Definition Flow
 data Output
+-- |'Eof' is the __End of Channel__ mark in the DP Definition Flow
 data Eof
 
 -- This is for connecting different kind of channels

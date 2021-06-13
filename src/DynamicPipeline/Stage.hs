@@ -1,3 +1,12 @@
+-- |
+-- Module      : DynamicPipeline.Channel
+-- Copyright   : (c) 2021 Juan Pablo Royo Sales
+--
+-- License     : BSD3
+-- Maintainer  : juanpablo.royo@gmail.com
+-- Stability   : experimental
+-- Portability : GHC
+--
 {-# LANGUAGE AllowAmbiguousTypes  #-}
 {-# LANGUAGE UndecidableInstances #-}
 module DynamicPipeline.Stage where

@@ -1,6 +1,13 @@
+-- |
+-- Module      : Misc.RepeatedDP
+-- Copyright   : (c) 2021 Juan Pablo Royo Sales
+--
+-- License     : BSD3
+-- Maintainer  : juanpablo.royo@gmail.com
+-- Stability   : experimental
+-- Portability : GHC
 module Misc.RepeatedDP where
 
-import           Data.HList
 import           DynamicPipeline
 import           Relude
 
