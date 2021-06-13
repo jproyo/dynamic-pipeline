@@ -5,19 +5,19 @@
 
 packages:
 - completed:
-    hackage: relude-1.0.0.1@sha256:35bcdaf14018e79f11e712b0e2314c1aac79976f28f4adc179985457493557d5,11569
-    pantry-tree:
-      size: 4282
-      sha256: ead687d39d06c841de36fc214402ad4389e8837284485cfe52d975f51b274e81
-  original:
-    hackage: relude-1.0.0.1
-- completed:
     hackage: HList-0.5.0.0@sha256:7d7a0bee8d01a7e0e10bf96c5214a21bebae3ecfc02d14fc13bf75458b38ac43,7137
     pantry-tree:
       size: 5718
       sha256: 2881dd9fe6ee24dad62ecd68be6d98e834823d21b659f4ff0de87475e33371f1
   original:
     hackage: HList-0.5.0.0
+- completed:
+    hackage: relude-1.0.0.1@sha256:35bcdaf14018e79f11e712b0e2314c1aac79976f28f4adc179985457493557d5,11569
+    pantry-tree:
+      size: 4282
+      sha256: ead687d39d06c841de36fc214402ad4389e8837284485cfe52d975f51b274e81
+  original:
+    hackage: relude-1.0.0.1
 snapshots:
 - completed:
     size: 565715

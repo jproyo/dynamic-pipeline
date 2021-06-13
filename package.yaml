@@ -24,7 +24,6 @@ ghc-options:
   - -Wno-unused-foralls
   - -fno-warn-deprecations
   - -fno-warn-orphans
-  - -freduction-depth=0 
 
 default-extensions:
   - ConstraintKinds
@@ -68,7 +67,6 @@ dependencies:
   - async
   - bytestring
   - HList
-  - indexed
   - lens
   - relude >= 1.0.0.0
   - unagi-chan

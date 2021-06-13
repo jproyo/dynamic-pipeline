@@ -1,5 +1,5 @@
-{-# LANGUAGE AllowAmbiguousTypes     #-}
-{-# LANGUAGE UndecidableInstances    #-}
+{-# LANGUAGE AllowAmbiguousTypes  #-}
+{-# LANGUAGE UndecidableInstances #-}
 module DynamicPipeline.Channel where
 
 import qualified Control.Concurrent                       as CC

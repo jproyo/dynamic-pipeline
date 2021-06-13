@@ -1,11 +1,9 @@
 {-# LANGUAGE AllowAmbiguousTypes  #-}
-{-# LANGUAGE InstanceSigs         #-}
 {-# LANGUAGE UndecidableInstances #-}
 module DynamicPipeline.Stage where
 
 import           Control.Concurrent.Async
 import           Control.Lens             hiding ((<|))
-import           Control.Monad.Indexed
 import           Data.HList
 import           Data.List.NonEmpty
 import           DynamicPipeline.Channel
@@ -118,33 +116,6 @@ type family WithOutput (dpDefinition :: Type) (monadicAction :: Type -> Type) ::
                                                                     )
 
 
-
--- Monad Index
-newtype Ix m i j a = Ix { unsafeRunIx :: m a }
-  deriving newtype (Functor, Applicative, Monad)
-
-instance Functor m => IxFunctor (Ix m) where
-  imap = fmap
-instance Applicative m => IxPointed (Ix m) where
-  ireturn = pure
-
-instance Applicative m => IxApplicative (Ix m) where
-  iap :: forall i j k a b. Ix m i j (a -> b)
-      -> Ix m j k a
-      -> Ix m i k b
-  iap = coerce $ (<*>) @m @a @b
-
-instance Monad m => IxMonad (Ix m) where
-  ibind :: forall i j k a b. (a -> Ix m j k b)
-        -> Ix m i j a
-        -> Ix m i k b
-  ibind = coerce $ (=<<) @m @a @b
-
--- Stages Definitions
-data ChannelState = ChannelState
-  { channelNext   :: Nat
-  , channelOpened :: [Nat]
-  }
 
 newtype DP s a = DP
   { runStage :: IO a
