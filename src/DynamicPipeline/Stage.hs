@@ -16,6 +16,7 @@ import           Control.Lens             hiding ((<|))
 import           Data.HList
 import           Data.List.NonEmpty
 import           DynamicPipeline.Channel
+import           DynamicPipeline.Flow
 import           GHC.TypeLits
 import           Relude                   as R
 

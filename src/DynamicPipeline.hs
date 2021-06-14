@@ -10,12 +10,13 @@
 module DynamicPipeline 
     ( module DynamicPipeline.Stage
     , module DynamicPipeline.Channel
+    , module DynamicPipeline.Flow
     , (.*.), HList(HNil), hHead
     )
     where
 
 import Data.HList ((.*.), HList(HNil), hHead)
-import DynamicPipeline.Channel
+import DynamicPipeline.Flow
     ( Eof,
       Output,
       Generator,
@@ -23,10 +24,12 @@ import DynamicPipeline.Channel
       Channel,
       type (:>>)(..),
       type (:<+>)(..),
-      ReadChannel,
+    )
+import DynamicPipeline.Channel
+    ( ReadChannel,
       WriteChannel,
-      forall,
-      forall',
+      fold,
+      fold',
       push,
       pull,
       unfoldM,
