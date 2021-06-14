@@ -15,6 +15,8 @@ import qualified Control.Concurrent                       as CC
 import           Control.Concurrent.Chan.Unagi.NoBlocking
 import           Control.Lens                             hiding ((<|))
 import           Data.ByteString                          as B
+import           Data.Comp.Algebra                        (CoalgM, anaM)
+import           Data.Foldable                            as F
 import           Data.HList
 import           Data.HList.Labelable
 import           Relude                                   as R
@@ -51,13 +53,24 @@ push a c = liftIO $ writeChan (unWrite c) (Just a)
 pull :: MonadIO m => ReadChannel a -> m (Maybe a)
 pull = liftIO . readChan (CC.threadDelay 100) . unRead
 
+data CoalgChanM m a b = Done
+                      | Computation
+                         { _cSeed   :: m a
+                         , _cStop   :: m Bool
+                         , _cOnElem :: a -> m ()
+                         }
+
+coalgChan :: MonadIO m => CoalgM m Maybe (CoalgChanM m a b)
+coalgChan Done = return Nothing
+coalgChan c@Computation{..} = ifM _cStop
+                                (return $ Just Done)
+                                ( _cSeed >>= _cOnElem >> return (Just c) )
+
 {-# INLINE unfoldOnChannel #-}
-unfoldOnChannel :: MonadIO m => m a -> (a -> b) -> m Bool -> WriteChannel b -> m ()
-unfoldOnChannel seed fn stopIfM writeChannel  = loop
- where
-  loop = ifM stopIfM
-            (pure ())
-            (seed >>= flip push writeChannel . fn >> loop)
+unfoldOnChannel :: forall m a b. MonadIO m => m a -> (a -> b) -> m Bool -> WriteChannel b -> m ()
+unfoldOnChannel seed fn stopIfM writeChannel  =
+  let onElem = flip push writeChannel . fn
+   in anaM coalgChan (Computation seed stopIfM onElem) >> pure ()
 
 {-# INLINE unfoldFile #-}
 unfoldFile :: MonadIO m => FilePath -> WriteChannel b -> (ByteString -> b) -> m ()
@@ -70,11 +83,10 @@ unfoldT :: (MonadIO m, Foldable t) => t a -> WriteChannel b -> (a -> b) -> m ()
 unfoldT ts writeChannel fn = forM_ ts (flip push writeChannel . fn)
 
 
-
 -- This types are for building DP Declaration
 
 -- |'Input' contains the 'Input' Stage definition with its Channels in the DP definition Flow
--- | 'a' has the for 
+-- | 'a' has the for
 data Input (a :: Type)
 -- |'Eof' is the __End of Channel__ mark in the DP Definition Flow
 data Generator (a :: Type)
