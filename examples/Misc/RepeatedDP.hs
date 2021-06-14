@@ -11,10 +11,10 @@ module Misc.RepeatedDP where
 import           DynamicPipeline
 import           Relude
 
-type DPExample = Input (Channel (Int :<+> Eof)) :>> Generator (Channel (Int :<+> Eof)) :>> Output
+type DPExample = Source (Channel (Int :<+> Eof)) :>> Generator (Channel (Int :<+> Eof)) :>> Sink
 
-input' :: forall k (s :: k). Stage (WriteChannel Int -> DP s ())
-input' = withInput @DPExample $ \cout -> unfoldT ([1 .. 1000] <> [1 .. 1000]) cout identity
+source' :: Stage (WriteChannel Int -> DP s ())
+source' = withSource @DPExample $ \cout -> unfoldT ([1 .. 1000] <> [1 .. 1000]) cout identity
 
 generator' :: GeneratorStage DPExample (Maybe Int) Int s
 generator' =
@@ -36,10 +36,10 @@ actorRepeted :: Int
              -> WriteChannel Int
              -> StateT (Maybe Int) (DP s) ()
 actorRepeted i rc wc = do
-  liftIO $ forall rc $ \e -> if e /= i then push e wc else pure ()
+  liftIO $ foldM rc $ \e -> if e /= i then push e wc else pure ()
 
-output' :: Stage (ReadChannel Int -> DP s ())
-output' = withOutput @DPExample $ flip forall print
+sink' :: Stage (ReadChannel Int -> DP s ())
+sink' = withSink @DPExample $ flip foldM print
 
 program :: IO ()
-program = runDP $ mkDP @DPExample input' generator' output'
+program = runDP $ mkDP @DPExample source' generator' sink'

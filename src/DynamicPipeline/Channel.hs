@@ -18,23 +18,22 @@ import           Data.ByteString                          as B
 import           Data.Comp.Algebra                        (CoalgM, anaM)
 import           Data.Foldable                            as F
 import           Data.HList
-import           Data.HList.Labelable
 import           Relude                                   as R
 
 -- Definitions
 newtype WriteChannel a = WriteChannel { unWrite :: InChan (Maybe a) }
 newtype ReadChannel a = ReadChannel { unRead :: OutChan (Maybe a) }
 
-{-# INLINE fold #-}
-fold :: MonadIO m => ReadChannel a -> (a -> m ()) -> m ()
-fold = loop'
+{-# INLINE foldM #-}
+foldM :: MonadIO m => ReadChannel a -> (a -> m ()) -> m ()
+foldM = loop'
   where
     loop' c io = 
       maybe (pure ()) (\e -> io e >> loop' c io) =<< liftIO (pull c)
 
-{-# INLINE fold' #-}
-fold' :: MonadIO m => ReadChannel a -> m () -> (a -> m ()) -> m ()
-fold' = loop'
+{-# INLINE foldM' #-}
+foldM' :: MonadIO m => ReadChannel a -> m () -> (a -> m ()) -> m ()
+foldM' = loop'
   where
     loop' c onNothing io = 
       maybe onNothing (\e -> io e >> loop' c onNothing io) =<< liftIO (pull c)

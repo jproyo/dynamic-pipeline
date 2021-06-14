@@ -13,18 +13,18 @@ import           Graph.ConnComp
 import           Relude
 
 -- brittany-disable-next-binding
-type DPConnComp = Input (Channel (Edge :<+> ConnectedComponents :<+> Eof))
+type DPConnComp = Source (Channel (Edge :<+> ConnectedComponents :<+> Eof))
                 :>> Generator (Channel (Edge :<+> ConnectedComponents :<+> Eof))
-                :>> Output
+                :>> Sink
 
-input' :: FilePath
-       -> Stage
-            (WriteChannel Edge -> WriteChannel ConnectedComponents -> DP st ())
-input' filePath = withInput @DPConnComp
-  $ \edgeOut _ -> withDP $ unfoldFile filePath edgeOut (toEdge . decodeUtf8)
+source' :: FilePath
+        -> Stage
+           (WriteChannel Edge -> WriteChannel ConnectedComponents -> DP st ())
+source' filePath = withSource @DPConnComp
+  $ \edgeOut _ -> unfoldFile filePath edgeOut (toEdge . decodeUtf8)
 
-output' :: Stage (ReadChannel Edge -> ReadChannel ConnectedComponents -> DP st ())
-output' = withOutput @DPConnComp $ \_ cc -> withDP $ forall cc print
+sink' :: Stage (ReadChannel Edge -> ReadChannel ConnectedComponents -> DP st ())
+sink' = withSink @DPConnComp $ \_ cc -> withDP $ foldM cc print
 
 generator' :: GeneratorStage DPConnComp ConnectedComponents Edge st
 generator' =
@@ -41,7 +41,7 @@ actor1 :: Edge
        -> WriteChannel ConnectedComponents
        -> StateT ConnectedComponents (DP st) ()
 actor1 _ readEdge _ writeEdge _ = 
-  forall readEdge $ \e -> get >>= doActor e
+  foldM readEdge $ \e -> get >>= doActor e
  where
   doActor v conn
     | toConnectedComp v `intersect` conn = modify (toConnectedComp v <>)
@@ -54,7 +54,7 @@ actor2 :: Edge
        -> WriteChannel ConnectedComponents
        -> StateT ConnectedComponents (DP st) ()
 actor2 _ _ readCC _ writeCC = do 
-  forall' readCC pushMemory $ \e -> get >>= doActor e
+  foldM' readCC pushMemory $ \e -> get >>= doActor e
 
  where
    pushMemory = get >>= flip push writeCC
@@ -75,8 +75,8 @@ genAction filter' readEdge readCC _ writeCC = do
                                 toConnectedComp
                                 readEdge
                                 (readCC .*. HNil)
-  forall (hHead results) (`push` writeCC)
+  foldM (hHead results) (`push` writeCC)
 
 
 program :: FilePath -> IO ()
-program file = runDP $ mkDP @DPConnComp (input' file) generator' output'
+program file = runDP $ mkDP @DPConnComp (source' file) generator' sink'
