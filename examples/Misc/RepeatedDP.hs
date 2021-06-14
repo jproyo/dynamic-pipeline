@@ -26,7 +26,7 @@ genAction :: Filter DPExample (Maybe Int) Int s
           -> WriteChannel Int
           -> DP s ()
 genAction filter' cin cout = 
-  void $ spawnFilterForAll' filter' Just (`push` cout) cin HNil
+  void $ unfoldFilterForAll' filter' Just (`push` cout) cin HNil
 
 filterTemp :: Filter DPExample (Maybe Int) Int s 
 filterTemp = mkFilter actorRepeted

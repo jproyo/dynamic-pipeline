@@ -29,7 +29,7 @@ import DynamicPipeline.Channel
       forall',
       push,
       pull,
-      unfoldOnChannel,
+      unfoldM,
       unfoldFile,
       unfoldT,
     )
@@ -54,6 +54,6 @@ import DynamicPipeline.Stage
       withOutput,
       mkDP,
       runDP,
-      spawnFilterForAll,
-      spawnFilterForAll',
-      spawnFilterWith)
+      unfoldFilterForAll,
+      unfoldFilterForAll',
+      unfoldFilterWith)

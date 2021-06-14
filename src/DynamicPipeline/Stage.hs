@@ -341,18 +341,18 @@ type SpawnFilterConstraint dpDefinition readElem st filterState filterParam l r 
                 , ArityRev b3 (HLength l4)
                 )
 
-{-# INLINE spawnFilterForAll #-}
-spawnFilterForAll :: forall dpDefinition readElem st filterState filterParam l r t l1 b0 l2 l3 b2 b3 l4.
+{-# INLINE unfoldFilterForAll #-}
+unfoldFilterForAll :: forall dpDefinition readElem st filterState filterParam l r t l1 b0 l2 l3 b2 b3 l4.
                      SpawnFilterConstraint dpDefinition readElem st filterState filterParam l r t l1 b0 l2 l3 b2 b3 l4
                   => Filter dpDefinition filterState filterParam st  -- Filter Template
                   -> (readElem -> filterState) -- Given the First element in this Filter Instance how to Initiate Internal Filter State (Memory)
                   -> ReadChannel readElem -- Main ReadChannel to feed filter
                   -> HList l -- HList with the rest of the ReadChannels if There are needed or HNil if it only contians 1 read channel
                   -> DP st (HList l) -- Rreturn the list of input Channels with the results to be read for the Generator at the end
-spawnFilterForAll filter' initState = spawnFilterForAll' filter' initState (const $ pure ())
+unfoldFilterForAll filter' initState = unfoldFilterForAll' filter' initState (const $ pure ())
 
-{-# INLINE spawnFilterForAll' #-}
-spawnFilterForAll' :: forall dpDefinition readElem st filterState filterParam l r t l1 b0 l2 l3 b2 b3 l4.
+{-# INLINE unfoldFilterForAll' #-}
+unfoldFilterForAll' :: forall dpDefinition readElem st filterState filterParam l r t l1 b0 l2 l3 b2 b3 l4.
                       SpawnFilterConstraint dpDefinition readElem st filterState filterParam l r t l1 b0 l2 l3 b2 b3 l4
                    => Filter dpDefinition filterState filterParam st  -- Filter Template
                    -> (readElem -> filterState) -- Given the First element in this Filter Instance how to Initiate Internal Filter State (Memory)
@@ -360,10 +360,10 @@ spawnFilterForAll' :: forall dpDefinition readElem st filterState filterParam l 
                    -> ReadChannel readElem -- Main ReadChannel to feed filter
                    -> HList l -- HList with the rest of the ReadChannels if There are needed or HNil if it only contians 1 read channel
                    -> DP st (HList l) -- Rreturn the list of input Channels with the results to be read for the Generator at the end
-spawnFilterForAll' filter' initState = spawnFilterWith filter' initState (const True)
+unfoldFilterForAll' filter' initState = unfoldFilterWith filter' initState (const True)
 
-{-# INLINE spawnFilterWith #-}
-spawnFilterWith  :: forall dpDefinition readElem st filterState filterParam l r t l1 b0 l2 l3 b2 b3 l4.
+{-# INLINE unfoldFilterWith #-}
+unfoldFilterWith  :: forall dpDefinition readElem st filterState filterParam l r t l1 b0 l2 l3 b2 b3 l4.
                     SpawnFilterConstraint dpDefinition readElem st filterState filterParam l r t l1 b0 l2 l3 b2 b3 l4
                  => Filter dpDefinition filterState filterParam st  -- Filter Template
                  -> (readElem -> filterState) -- Given the First element in this Filter Instance how to Initiate Internal Filter State (Memory)
@@ -372,7 +372,7 @@ spawnFilterWith  :: forall dpDefinition readElem st filterState filterParam l r 
                  -> ReadChannel readElem -- Main ReadChannel to feed filter
                  -> HList l -- HList with the rest of the ReadChannels if There are needed or HNil if it only contians 1 read channel
                  -> DP st (HList l) -- Rreturn the list of input Channels with the results to be read for the Generator at the end
-spawnFilterWith = loopSpawn
+unfoldFilterWith = loopSpawn
 
   where
     loopSpawn filter'' initState' spawnIf' onElem' cin' restIns' =

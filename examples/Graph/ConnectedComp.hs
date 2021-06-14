@@ -71,10 +71,10 @@ genAction :: Filter DPConnComp ConnectedComponents Edge st
           -> WriteChannel ConnectedComponents
           -> DP st ()
 genAction filter' readEdge readCC _ writeCC = do
-  results <- spawnFilterForAll filter'
-                               toConnectedComp
-                               readEdge
-                               (readCC .*. HNil)
+  results <- unfoldFilterForAll filter'
+                                toConnectedComp
+                                readEdge
+                                (readCC .*. HNil)
   forall (hHead results) (`push` writeCC)
 
 

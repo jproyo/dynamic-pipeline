@@ -53,30 +53,30 @@ push a c = liftIO $ writeChan (unWrite c) (Just a)
 pull :: MonadIO m => ReadChannel a -> m (Maybe a)
 pull = liftIO . readChan (CC.threadDelay 100) . unRead
 
-data CoalgChanM m a b = Done
-                      | Computation
-                         { _cSeed   :: m a
-                         , _cStop   :: m Bool
-                         , _cOnElem :: a -> m ()
-                         }
+data InputFeedCoalgM m a b = Done
+                           | Computation
+                             { _cSeed   :: m a
+                             , _cStop   :: m Bool
+                             , _cOnElem :: a -> m ()
+                             }
 
-coalgChan :: MonadIO m => CoalgM m Maybe (CoalgChanM m a b)
-coalgChan Done = return Nothing
-coalgChan c@Computation{..} = ifM _cStop
+inputFilterCoalgM :: MonadIO m => CoalgM m Maybe (InputFeedCoalgM m a b)
+inputFilterCoalgM Done = return Nothing
+inputFilterCoalgM c@Computation{..} = ifM _cStop
                                 (return $ Just Done)
                                 ( _cSeed >>= _cOnElem >> return (Just c) )
 
-{-# INLINE unfoldOnChannel #-}
-unfoldOnChannel :: forall m a b. MonadIO m => m a -> (a -> b) -> m Bool -> WriteChannel b -> m ()
-unfoldOnChannel seed fn stopIfM writeChannel  =
+{-# INLINE unfoldM #-}
+unfoldM :: forall m a b. MonadIO m => m a -> (a -> b) -> m Bool -> WriteChannel b -> m ()
+unfoldM seed fn stopIfM writeChannel  =
   let onElem = flip push writeChannel . fn
-   in anaM coalgChan (Computation seed stopIfM onElem) >> pure ()
+   in anaM inputFilterCoalgM (Computation seed stopIfM onElem) >> pure ()
 
 {-# INLINE unfoldFile #-}
 unfoldFile :: MonadIO m => FilePath -> WriteChannel b -> (ByteString -> b) -> m ()
 unfoldFile file writeChannel fn = liftIO $
     R.withFile file ReadMode $ \h ->
-      unfoldOnChannel (B.hGetLine h) fn (R.hIsEOF h) writeChannel
+      unfoldM (B.hGetLine h) fn (R.hIsEOF h) writeChannel
 
 {-# INLINE unfoldT #-}
 unfoldT :: (MonadIO m, Foldable t) => t a -> WriteChannel b -> (a -> b) -> m ()
