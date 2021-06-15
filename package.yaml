@@ -92,7 +92,7 @@ dependencies:
   - async
   - bytestring
   - compdata
-  - HList
+  - HList == 0.5.*
   - lens
   - relude >= 1.0.0.0
   - unagi-chan

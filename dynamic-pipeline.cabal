@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: b3e4537cba4bf84b0d63bc15e900b8fa52ab19fa297b873b0024f00c3f1f881f
+-- hash: c030b2735193127a43f66de6b554a6ded0721f78300b9fd5ba3010fa49ad445f
 
 name:           dynamic-pipeline
 version:        0.1.0.0
@@ -60,7 +60,7 @@ library
   default-extensions: ConstraintKinds DataKinds DefaultSignatures DeriveAnyClass DeriveFoldable DeriveFunctor DeriveGeneric DeriveLift DeriveTraversable DerivingStrategies DerivingVia EmptyCase FlexibleContexts FlexibleInstances FunctionalDependencies GADTs GeneralizedNewtypeDeriving LambdaCase MultiParamTypeClasses MultiWayIf NoImplicitPrelude OverloadedStrings PackageImports PartialTypeSignatures PolyKinds Rank2Types RankNTypes RecordWildCards ScopedTypeVariables StandaloneDeriving TemplateHaskell TupleSections TypeApplications TypeOperators TypeFamilies
   ghc-options: -Wall -fno-warn-partial-type-signatures -fconstraint-solver-iterations=0 -fspecialise-aggressively -fexpose-all-unfoldings -flate-specialise -Wincomplete-record-updates -Wincomplete-uni-patterns -Wredundant-constraints -Wno-unused-top-binds -Wno-unused-foralls -fno-warn-deprecations -fno-warn-orphans
   build-depends:
-      HList
+      HList ==0.5.0.0
     , async
     , base >=4.7 && <5
     , bytestring
@@ -112,7 +112,7 @@ test-suite conn-comp-tests
   build-tool-depends:
       hspec-discover:hspec-discover
   build-depends:
-      HList
+      HList ==0.5.0.0
     , QuickCheck
     , async
     , base >=4.7 && <5
