@@ -88,11 +88,11 @@ default-extensions:
   - TypeFamilies
 
 dependencies:
-  - base >= 4.7 && < 5
+  - base >= 4.7 && < 4.12
   - async
   - bytestring
   - compdata
-  - HList == 0.5.*
+  - HList
   - lens
   - relude >= 1.0.0.0
   - unagi-chan
