@@ -1,6 +1,8 @@
 # DynamicPipeline
 
 ![badge](https://github.com/jproyo/dynamic-pipeline/actions/workflows/dynamic-pipeline.yml/badge.svg)
+[![Hackage](https://img.shields.io/hackage/v/dynamic-pipeline.svg?style=flat)](https://hackage.haskell.org/package/dynamic-pipeline)
+
 
 **DynamicPipeline** is a *Type Safe* Dynamic and Parallel Streaming Library, which is an implementation of **Dynamic Pipeline Paradigm (DPP)**
 proposed in this paper [DPP](https://biblioteca.sistedes.es/articulo/the-dynamic-pipeline-paradigm/).

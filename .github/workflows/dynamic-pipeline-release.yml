@@ -38,4 +38,7 @@ jobs:
     - name: Generate Documentation
       run: stack haddock --no-haddock-deps --haddock-internal
     - name: Publish Package
+      env:
+        HACKAGE_USERNAME: {{ secrets.HACKAGE_USERNAME }}
+        HACKAGE_PASSWORD: {{ secrets.HACKAGE_PASSWORD }}
       run: stack upload .
