@@ -1,3 +1,5 @@
+{-# LANGUAGE AllowAmbiguousTypes  #-}
+{-# LANGUAGE UndecidableInstances #-}
 -- |
 -- Module      : DynamicPipeline.Channel
 -- Copyright   : (c) 2021 Juan Pablo Royo Sales
@@ -7,9 +9,19 @@
 -- Stability   : experimental
 -- Portability : GHC
 --
-{-# LANGUAGE AllowAmbiguousTypes  #-}
-{-# LANGUAGE UndecidableInstances #-}
-module DynamicPipeline.Channel where
+module DynamicPipeline.Channel 
+  ( ReadChannel,
+    WriteChannel,
+    DynamicPipeline.Channel.foldM,
+    foldM',
+    push,
+    pull,
+    unfoldM,
+    unfoldFile,
+    unfoldT, 
+    newChannel,
+    end
+  ) where
 
 import qualified Control.Concurrent                       as CC
 import           Control.Concurrent.Chan.Unagi.NoBlocking

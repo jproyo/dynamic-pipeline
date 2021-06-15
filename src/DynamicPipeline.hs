@@ -77,6 +77,7 @@ module DynamicPipeline
       ValidDP,
       IsDP,
       DP, 
+      UnFoldFilter, 
       withDP, 
       mkGenerator,
       mkFilter,
@@ -89,9 +90,11 @@ module DynamicPipeline
       withSink,
       mkDP,
       runDP,
-      unfoldFilterForAll,
-      unfoldFilterForAll',
-      unfoldFilterWith,
+      unfoldF,
+      mkUnfoldFilter,
+      mkUnfoldFilter',
+      mkUnfoldFilterForAll,
+      mkUnfoldFilterForAll',
       (.*.), HList(HNil), hHead, 
       -- * Channels
       ReadChannel,
@@ -108,50 +111,8 @@ module DynamicPipeline
 
 import Data.HList ((.*.), HList(HNil), hHead)
 import DynamicPipeline.Flow
-    ( Eof,
-      Sink,
-      Generator,
-      Source,
-      Channel,
-      type (:>>)(..),
-      type (:<+>)(..),
-    )
 import DynamicPipeline.Channel
-    ( ReadChannel,
-      WriteChannel,
-      foldM,
-      foldM',
-      push,
-      pull,
-      unfoldM,
-      unfoldFile,
-      unfoldT,
-    )
 import DynamicPipeline.Stage
-    ( DynamicPipeline,
-      Filter,
-      Actor,
-      GeneratorStage,
-      Stage,
-      ValidDP,
-      IsDP,
-      DP, 
-      withDP, 
-      mkGenerator,
-      mkFilter,
-      single,
-      actor,
-      (|>>>),
-      (|>>),
-      withSource,
-      withGenerator,
-      withSink,
-      mkDP,
-      runDP,
-      unfoldFilterForAll,
-      unfoldFilterForAll',
-      unfoldFilterWith)
-
 
 -- $grammar
 -- Something here

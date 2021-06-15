@@ -9,7 +9,33 @@
 -- Stability   : experimental
 -- Portability : GHC
 --
-module DynamicPipeline.Flow where
+module DynamicPipeline.Flow 
+    ( Eof,
+      Sink,
+      Generator,
+      Source,
+      Channel,
+      type (:>>)(..),
+      type (:<+>)(..),
+      ChanIn,
+      ChanOut,
+      ChanOutIn,
+      ChansFilter,
+      ChanWriteSource,
+      ChanReadWriteGen,
+      ChanReadOut,
+      MkCh(..),
+      MkChans(..),
+      ExpandGenToCh, 
+      ExpandSinkToCh,
+      ExpandSourceToCh,
+      ExpandFilterToCh,
+      AllChans,
+      FilterChans,
+      inGenOut,
+      makeChans,
+      getFilterChannels
+    ) where
 
 import           Control.Lens                             hiding ((<|))
 import           Data.Foldable                            as F
