@@ -89,32 +89,45 @@ data a :>> b = a :>> b
 infixr 5 :>>
 
 -- Internal Data Types for expanding function based on Channel definitions
+{-# WARNING ChanIn "INTERNAL USE" #-}
 data ChanIn (a :: Type)
+{-# WARNING ChanOut "INTERNAL USE" #-}
 data ChanOut (a :: Type)
+{-# WARNING ChanOutIn "INTERNAL USE" #-}
 data ChanOutIn (a :: Type) (b :: Type)
+{-# WARNING ChansFilter "INTERNAL USE" #-}
 data ChansFilter (a :: Type)
+{-# WARNING ChanWriteSource "INTERNAL USE" #-}
 data ChanWriteSource (a :: Type)
+{-# WARNING ChanReadWriteGen "INTERNAL USE" #-}
 data ChanReadWriteGen (a :: Type)
+{-# WARNING ChanReadOut "INTERNAL USE" #-}
 data ChanReadOut (a :: Type)
 
 -- Type encoding for Building Chans. Only for internal use in the Associated Type Family and combinators of MkCh and MkChans
 -- For accessing Dynamic Indexed Records of Channels
+{-# WARNING inLabel "INTERNAL USE" #-}
 inLabel :: Label "Source"
 inLabel = Label
 
+{-# WARNING genLabel "INTERNAL USE" #-}
 genLabel :: Label "generator"
 genLabel = Label
 
+{-# WARNING outLabel "INTERNAL USE" #-}
 outLabel :: Label "Sink"
 outLabel = Label
 
+{-# WARNING inChLabel "INTERNAL USE" #-}
 inChLabel :: Label "in-ch"
 inChLabel = Label
 
+{-# WARNING outChLabel "INTERNAL USE" #-}
 outChLabel :: Label "out-ch"
 outChLabel = Label
 
 -- Associated Type Family: Building Source and Sink Channels
+{-# WARNING MkCh "INTERNAL USE" #-}
 class MkCh (a :: Type) where
   type HChI a :: [Type]
   type HChO a :: [Type]
@@ -134,6 +147,7 @@ instance MkCh Eof where
   mkCh _ = return (HNil, HNil)
 
 -- Type Family Defunctionalization to Expand Source, Generator and Sinks to its own HList Channel types.
+{-# WARNING ExpandToHList "INTERNAL USE" #-}
 type family ExpandToHList (a :: Type) (param :: Type) :: [Type]
 type instance ExpandToHList (ChanWriteSource ( Source (Channel inToGen)
                                           :>> Generator (Channel genToOut)
@@ -150,12 +164,17 @@ type instance ExpandToHList (ChanReadOut ( Source (Channel inToGen)
                                        :>> Sink )
                             ) filter = HChO genToOut
 
+{-# WARNING ExpandSourceToCh "INTERNAL USE" #-}
 type ExpandSourceToCh a = ExpandToHList (ChanWriteSource a) Void
+{-# WARNING ExpandGenToCh "INTERNAL USE" #-}
 type ExpandGenToCh a filter = ExpandToHList (ChanReadWriteGen a) filter
+{-# WARNING ExpandFilterToCh "INTERNAL USE" #-}
 type ExpandFilterToCh a param = ExpandGenToCh a param
+{-# WARNING ExpandSinkToCh "INTERNAL USE" #-}
 type ExpandSinkToCh a = ExpandToHList (ChanReadOut a) Void
 
 -- Class for building Channels base on a DP Definition on `a` Type
+{-# WARNING MkChans "INTERNAL USE" #-}
 class MkChans (a :: Type) where
   type HChan a :: Type
   mkChans :: Proxy a -> IO (HChan a)
@@ -203,11 +222,13 @@ instance MkCh inToGen
     return $ mkRecord (inChLabel .=. reads' .*. outChLabel .=. writes' .*. HNil)
 
 
+{-# WARNING makeChans "INTERNAL USE" #-}
 {-# INLINE makeChans #-}
 makeChans :: forall (a :: Type). MkChans a => IO (HChan a)
 makeChans = mkChans (Proxy @a)
 
 -- Ugly Dynamic Indexed Record Viewer to generate specific list of channels
+{-# WARNING sourceChans "INTERNAL USE" #-}
 {-# INLINE sourceChans #-}
 sourceChans :: ( LabeledOpticF (LabelableTy r1) (Const t1)
               , LabeledOpticP (LabelableTy r1) (->)
@@ -222,6 +243,7 @@ sourceChans = let inl  = hLens' inLabel
                   inch = hLens' inChLabel
                in view (inl . inch)
 
+{-# WARNING generatorChans "INTERNAL USE" #-}
 {-# INLINE generatorChans #-}
 generatorChans :: ( LabeledOpticF (LabelableTy r1) (Const (HList l1))
                   , LabeledOpticP (LabelableTy r1) (->)
@@ -248,6 +270,7 @@ generatorChans ch = let inl  = hLens' inLabel
                         insGen = view (genl . inch) ch
                      in outsIn `hAppendList` insGen
 
+{-# WARNING sinkChans "INTERNAL USE" #-}
 {-# INLINE sinkChans #-}
 sinkChans :: ( LabeledOpticF (LabelableTy r1) (Const t1)
                , LabeledOpticP (LabelableTy r1) (->)
@@ -262,7 +285,7 @@ sinkChans = let genl  = hLens' genLabel
                 outch = hLens' outChLabel
              in view (genl . outch)
 
-
+{-# WARNING AllChans "INTERNAL USE" #-}
 type AllChans r2 r3 l1 r4 l2 t2 s t1 s2 t5 l3 l4 = (LabeledOpticTo (LabelableTy r2) "in-ch" (->),
             LabeledOpticF (LabelableTy r3) (Const (HList l3)),
             LabeledOpticP (LabelableTy r3) (->),
@@ -287,11 +310,13 @@ type AllChans r2 r3 l1 r4 l2 t2 s t1 s2 t5 l3 l4 = (LabeledOpticTo (LabelableTy 
             Labelable "out-ch" r2 s2 t5 (HList l1) (HList l1),
             Labelable "out-ch" r4 s t1 (HList l4) (HList l4))
 
+{-# WARNING inGenOut "INTERNAL USE" #-}
 {-# INLINE inGenOut #-}
 inGenOut :: AllChans r2 r3 l1 r4 l2 t2 s t1 s2 t5 l3 l4 => r3 t2 -> (HList l3, HList (HAppendListR l1 l2), HList l4)
 inGenOut ch = (sourceChans ch, generatorChans ch, sinkChans ch)
 
 
+{-# WARNING FilterChans "INTERNAL USE" #-}
 type FilterChans r b t a = (LabeledOpticF (LabelableTy r) (Const b),
                             LabeledOpticTo (LabelableTy r) "out-ch" (->),
                             Labelable "out-ch" r t t b b,
@@ -300,6 +325,7 @@ type FilterChans r b t a = (LabeledOpticF (LabelableTy r) (Const b),
                             LabeledOpticTo (LabelableTy r) "in-ch" (->),
                             Labelable "in-ch" r t t a a)
 
+{-# WARNING getFilterChannels "INTERNAL USE" #-}
 {-# INLINE getFilterChannels #-}
 getFilterChannels :: FilterChans r b t a => r t -> (a, b)
 getFilterChannels ch =
