@@ -6,11 +6,6 @@ on:
   pull_request:
     branches: [ main ]
 
-defaults:
-  run:
-    shell: bash
-    working-directory: ./app
-
 jobs:
   build:
 
@@ -44,6 +39,6 @@ jobs:
     - name: Run tests
       run: cabal test all
     - name: Create doc dir
-      run: mkdir -p ./app/docs
+      run: mkdir -p ./docs
     - name: Generate Documentation
       run: cabal v2-haddock --builddir="./app/docs" --haddock-for-hackage --enable-doc
