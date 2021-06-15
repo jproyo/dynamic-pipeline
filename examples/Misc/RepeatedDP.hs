@@ -36,8 +36,7 @@ actorRepeted :: Int
              -> ReadChannel Int
              -> WriteChannel Int
              -> StateT (Maybe Int) (DP s) ()
-actorRepeted i rc wc = do
-  liftIO $ foldM rc $ \e -> if e /= i then push e wc else pure ()
+actorRepeted i rc wc = foldM rc $ \e -> if e /= i then push e wc else pure ()
 
 sink' :: Stage (ReadChannel Int -> DP s ())
 sink' = withSink @DPExample $ flip foldM print
