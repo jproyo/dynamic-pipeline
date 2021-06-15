@@ -1,10 +1,10 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.33.0.
+-- This file has been generated from package.yaml by hpack version 0.34.4.
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: d3c6c3c8809cc4d6ea5e502c6e5cddfe1347ed45a20c8df1a76dccdcb054c925
+-- hash: 89464c83938526024dd64162719f12e35ea24cc23291981cf39a72fe4472d93f
 
 name:           dynamic-pipeline
 version:        0.1.0.0
@@ -57,20 +57,52 @@ library
       DynamicPipeline.Stage
   hs-source-dirs:
       src
-  default-extensions: ConstraintKinds DataKinds DefaultSignatures DeriveAnyClass DeriveFoldable DeriveFunctor DeriveGeneric DeriveLift DeriveTraversable DerivingStrategies DerivingVia EmptyCase FlexibleContexts FlexibleInstances FunctionalDependencies GADTs GeneralizedNewtypeDeriving LambdaCase MultiParamTypeClasses MultiWayIf NoImplicitPrelude OverloadedStrings PackageImports PartialTypeSignatures PolyKinds Rank2Types RankNTypes RecordWildCards ScopedTypeVariables StandaloneDeriving TemplateHaskell TupleSections TypeApplications TypeOperators TypeFamilies
+  default-extensions:
+      ConstraintKinds
+      DataKinds
+      DefaultSignatures
+      DeriveAnyClass
+      DeriveFoldable
+      DeriveFunctor
+      DeriveGeneric
+      DeriveLift
+      DeriveTraversable
+      DerivingStrategies
+      DerivingVia
+      EmptyCase
+      FlexibleContexts
+      FlexibleInstances
+      FunctionalDependencies
+      GADTs
+      GeneralizedNewtypeDeriving
+      LambdaCase
+      MultiParamTypeClasses
+      MultiWayIf
+      NoImplicitPrelude
+      OverloadedStrings
+      PackageImports
+      PartialTypeSignatures
+      PolyKinds
+      Rank2Types
+      RankNTypes
+      RecordWildCards
+      ScopedTypeVariables
+      StandaloneDeriving
+      TemplateHaskell
+      TupleSections
+      TypeApplications
+      TypeOperators
+      TypeFamilies
   ghc-options: -Wall -fno-warn-partial-type-signatures -fconstraint-solver-iterations=0 -fspecialise-aggressively -fexpose-all-unfoldings -flate-specialise -Wincomplete-record-updates -Wincomplete-uni-patterns -Wredundant-constraints -Wno-unused-top-binds -Wno-unused-foralls -fno-warn-deprecations -fno-warn-orphans
   build-depends:
       HList
     , async
-    , base >=4.7 && <4.12
+    , base >=4.7 && <5
     , bytestring
     , compdata
     , lens
     , relude >=1.0.0.0
     , unagi-chan
-  if false
-    other-modules:
-        Paths_dynamic_pipeline
   default-language: Haskell2010
 
 executable examples
@@ -81,12 +113,47 @@ executable examples
       Misc.RepeatedDP
   hs-source-dirs:
       examples
-  default-extensions: ConstraintKinds DataKinds DefaultSignatures DeriveAnyClass DeriveFoldable DeriveFunctor DeriveGeneric DeriveLift DeriveTraversable DerivingStrategies DerivingVia EmptyCase FlexibleContexts FlexibleInstances FunctionalDependencies GADTs GeneralizedNewtypeDeriving LambdaCase MultiParamTypeClasses MultiWayIf NoImplicitPrelude OverloadedStrings PackageImports PartialTypeSignatures PolyKinds Rank2Types RankNTypes RecordWildCards ScopedTypeVariables StandaloneDeriving TemplateHaskell TupleSections TypeApplications TypeOperators TypeFamilies
+  default-extensions:
+      ConstraintKinds
+      DataKinds
+      DefaultSignatures
+      DeriveAnyClass
+      DeriveFoldable
+      DeriveFunctor
+      DeriveGeneric
+      DeriveLift
+      DeriveTraversable
+      DerivingStrategies
+      DerivingVia
+      EmptyCase
+      FlexibleContexts
+      FlexibleInstances
+      FunctionalDependencies
+      GADTs
+      GeneralizedNewtypeDeriving
+      LambdaCase
+      MultiParamTypeClasses
+      MultiWayIf
+      NoImplicitPrelude
+      OverloadedStrings
+      PackageImports
+      PartialTypeSignatures
+      PolyKinds
+      Rank2Types
+      RankNTypes
+      RecordWildCards
+      ScopedTypeVariables
+      StandaloneDeriving
+      TemplateHaskell
+      TupleSections
+      TypeApplications
+      TypeOperators
+      TypeFamilies
   ghc-options: -Wall -fno-warn-partial-type-signatures -fconstraint-solver-iterations=0 -fspecialise-aggressively -fexpose-all-unfoldings -flate-specialise -Wincomplete-record-updates -Wincomplete-uni-patterns -Wredundant-constraints -Wno-unused-top-binds -Wno-unused-foralls -fno-warn-deprecations -fno-warn-orphans -threaded -O3 -rtsopts -with-rtsopts=-N
   build-depends:
       HList
     , async
-    , base >=4.7 && <4.12
+    , base >=4.7 && <5
     , bytestring
     , compdata
     , dynamic-pipeline
@@ -95,9 +162,6 @@ executable examples
     , relude >=1.0.0.0
     , trifecta
     , unagi-chan
-  if false
-    other-modules:
-        Paths_dynamic_pipeline
   default-language: Haskell2010
 
 test-suite conn-comp-tests
@@ -107,7 +171,42 @@ test-suite conn-comp-tests
       Paths_dynamic_pipeline
   hs-source-dirs:
       test
-  default-extensions: ConstraintKinds DataKinds DefaultSignatures DeriveAnyClass DeriveFoldable DeriveFunctor DeriveGeneric DeriveLift DeriveTraversable DerivingStrategies DerivingVia EmptyCase FlexibleContexts FlexibleInstances FunctionalDependencies GADTs GeneralizedNewtypeDeriving LambdaCase MultiParamTypeClasses MultiWayIf NoImplicitPrelude OverloadedStrings PackageImports PartialTypeSignatures PolyKinds Rank2Types RankNTypes RecordWildCards ScopedTypeVariables StandaloneDeriving TemplateHaskell TupleSections TypeApplications TypeOperators TypeFamilies
+  default-extensions:
+      ConstraintKinds
+      DataKinds
+      DefaultSignatures
+      DeriveAnyClass
+      DeriveFoldable
+      DeriveFunctor
+      DeriveGeneric
+      DeriveLift
+      DeriveTraversable
+      DerivingStrategies
+      DerivingVia
+      EmptyCase
+      FlexibleContexts
+      FlexibleInstances
+      FunctionalDependencies
+      GADTs
+      GeneralizedNewtypeDeriving
+      LambdaCase
+      MultiParamTypeClasses
+      MultiWayIf
+      NoImplicitPrelude
+      OverloadedStrings
+      PackageImports
+      PartialTypeSignatures
+      PolyKinds
+      Rank2Types
+      RankNTypes
+      RecordWildCards
+      ScopedTypeVariables
+      StandaloneDeriving
+      TemplateHaskell
+      TupleSections
+      TypeApplications
+      TypeOperators
+      TypeFamilies
   ghc-options: -Wall -fno-warn-partial-type-signatures -fconstraint-solver-iterations=0 -fspecialise-aggressively -fexpose-all-unfoldings -flate-specialise -Wincomplete-record-updates -Wincomplete-uni-patterns -Wredundant-constraints -Wno-unused-top-binds -Wno-unused-foralls -fno-warn-deprecations -fno-warn-orphans -threaded -O2 -rtsopts -with-rtsopts=-N -Wno-unused-local-binds -Wno-unused-matches
   build-tool-depends:
       hspec-discover:hspec-discover
@@ -115,7 +214,7 @@ test-suite conn-comp-tests
       HList
     , QuickCheck
     , async
-    , base >=4.7 && <4.12
+    , base >=4.7 && <5
     , bytestring
     , compdata
     , dynamic-pipeline
