@@ -3,12 +3,10 @@ cabal-version: 1.12
 -- This file has been generated from package.yaml by hpack version 0.34.4.
 --
 -- see: https://github.com/sol/hpack
---
--- hash: cee18558d6141f322aea240d00a86376d456c5759ea91476779a77a6d688089c
 
 name:           dynamic-pipeline
-version:        0.1.0.0
-synopsis:       Dynamic Pipeline is a Type Safe Dynamic and Parallel Streaming Library, which is an implementation of Dynamic Pipeline Paradigm (DPP)
+version:        0.1.0.5
+synopsis:       Library Type Safe implementation of Dynamic Pipeline Paradigm (DPP).
 description:    @dynamic-pipeline@ is a __/Type Safe/__ Dynamic and Parallel Streaming Library, which is an implementation of __Dynamic Pipeline Paradigm (DPP)__ 
                 proposed in this paper [DPP](https://biblioteca.sistedes.es/articulo/the-dynamic-pipeline-paradigm/).
                 .
@@ -100,7 +98,6 @@ library
     , async >=2.1.0 && <=2.2.3
     , base >=4.7 && <5
     , bytestring >=0.10.9.0 && <=0.11.1.0
-    , compdata >=0.10 && <=0.12.1
     , lens >=4.19 && <=5.0.1
     , relude >=0.7.0.0 && <=1.0.0.1
     , unagi-chan >=0.4.1.0
@@ -156,7 +153,6 @@ executable examples
     , async
     , base >=4.7 && <5
     , bytestring >=0.10.9.0 && <=0.11.1.0
-    , compdata >=0.10 && <=0.12.1
     , dynamic-pipeline
     , lens >=4.19 && <=5.0.1
     , optparse-applicative
@@ -208,7 +204,7 @@ test-suite conn-comp-tests
       TypeApplications
       TypeOperators
       TypeFamilies
-  ghc-options: -Wall -fno-warn-partial-type-signatures -fconstraint-solver-iterations=0 -fspecialise-aggressively -fexpose-all-unfoldings -flate-specialise -Wincomplete-record-updates -Wincomplete-uni-patterns -Wredundant-constraints -Wno-unused-top-binds -Wno-unused-foralls -fno-warn-deprecations -fno-warn-orphans -threaded -O2 -rtsopts -with-rtsopts=-N -Wno-unused-local-binds -Wno-unused-matches
+  ghc-options: -Wall -fno-warn-partial-type-signatures -fconstraint-solver-iterations=0 -fspecialise-aggressively -fexpose-all-unfoldings -flate-specialise -Wincomplete-record-updates -Wincomplete-uni-patterns -Wredundant-constraints -Wno-unused-top-binds -Wno-unused-foralls -fno-warn-deprecations -fno-warn-orphans -threaded -rtsopts -with-rtsopts=-N -Wno-unused-local-binds -Wno-unused-matches
   build-tool-depends:
       hspec-discover:hspec-discover
   build-depends:
@@ -217,7 +213,6 @@ test-suite conn-comp-tests
     , async >=2.1.0 && <=2.2.3
     , base >=4.7 && <5
     , bytestring >=0.10.9.0 && <=0.11.1.0
-    , compdata >=0.10 && <=0.12.1
     , dynamic-pipeline
     , hspec ==2.*
     , lens >=4.19 && <=5.0.1

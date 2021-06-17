@@ -1,12 +1,12 @@
 name:       dynamic-pipeline
-version:    0.1.0.0
+version:    0.1.0.5
 category:   Data,Data Flow,Pipes,Streaming,Parallel,Type-safe
 author:     Juan Pablo Royo Sales
 maintainer: juanpablo.royo@gmail.com
 copyright:  Copyright (C) 2021 Juan Pablo Royo Sales
 license:    BSD3
 github:     jproyo/dynamic-pipeline
-synopsis:   Dynamic Pipeline is a Type Safe Dynamic and Parallel Streaming Library, which is an implementation of Dynamic Pipeline Paradigm (DPP)
+synopsis:   Library Type Safe implementation of Dynamic Pipeline Paradigm (DPP).
 description: |
   @dynamic-pipeline@ is a __/Type Safe/__ Dynamic and Parallel Streaming Library, which is an implementation of __Dynamic Pipeline Paradigm (DPP)__ 
   proposed in this paper [DPP](https://biblioteca.sistedes.es/articulo/the-dynamic-pipeline-paradigm/).
@@ -92,7 +92,6 @@ dependencies:
   - base >= 4.7 && < 5
   - async >= 2.1.0 && <= 2.2.3
   - bytestring >= 0.10.9.0 && <= 0.11.1.0
-  - compdata >= 0.10 && <= 0.12.1
   - HList >= 0.5.0.0
   - lens >= 4.19 && <= 5.0.1
   - relude >= 0.7.0.0 && <= 1.0.0.1
@@ -136,7 +135,6 @@ tests:
       - hspec-discover
     ghc-options:
       - -threaded
-      - -O2
       - -rtsopts
       - -with-rtsopts=-N
       - -Wno-unused-local-binds
