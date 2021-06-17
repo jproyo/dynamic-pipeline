@@ -4,10 +4,11 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 7737f19f69f26500eab65522e5ab55cec54a10ee22c4ba4628bdf0fa84c090c4
+-- hash: cee18558d6141f322aea240d00a86376d456c5759ea91476779a77a6d688089c
 
 name:           dynamic-pipeline
 version:        0.1.0.0
+synopsis:       Dynamic Pipeline is a Type Safe Dynamic and Parallel Streaming Library, which is an implementation of Dynamic Pipeline Paradigm (DPP)
 description:    @dynamic-pipeline@ is a __/Type Safe/__ Dynamic and Parallel Streaming Library, which is an implementation of __Dynamic Pipeline Paradigm (DPP)__ 
                 proposed in this paper [DPP](https://biblioteca.sistedes.es/articulo/the-dynamic-pipeline-paradigm/).
                 .
@@ -95,7 +96,7 @@ library
       TypeFamilies
   ghc-options: -Wall -fno-warn-partial-type-signatures -fconstraint-solver-iterations=0 -fspecialise-aggressively -fexpose-all-unfoldings -flate-specialise -Wincomplete-record-updates -Wincomplete-uni-patterns -Wredundant-constraints -Wno-unused-top-binds -Wno-unused-foralls -fno-warn-deprecations -fno-warn-orphans
   build-depends:
-      HList >=0.4.0.0 && <=0.5.0.0
+      HList >=0.5.0.0
     , async >=2.1.0 && <=2.2.3
     , base >=4.7 && <5
     , bytestring >=0.10.9.0 && <=0.11.1.0
@@ -211,7 +212,7 @@ test-suite conn-comp-tests
   build-tool-depends:
       hspec-discover:hspec-discover
   build-depends:
-      HList >=0.4.0.0 && <=0.5.0.0
+      HList >=0.5.0.0
     , QuickCheck
     , async >=2.1.0 && <=2.2.3
     , base >=4.7 && <5
