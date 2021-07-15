@@ -1,5 +1,5 @@
 name:       dynamic-pipeline
-version:    0.1.0.5
+version:    0.2.0.5
 category:   Data,Data Flow,Pipes,Streaming,Parallel,Type-safe
 author:     Juan Pablo Royo Sales
 maintainer: juanpablo.royo@gmail.com
@@ -32,7 +32,7 @@ description: |
   Import "DynamicPipeline" for using the library.
   .
   * /Examples/: <src/examples examples directory> in the package
-
+  .
 extra-source-files:
 - README.md
 
