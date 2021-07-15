@@ -110,6 +110,7 @@ executable examples
       Graph.ConnComp
       Graph.ConnectedComp
       Misc.RepeatedDP
+      Misc.RepeatedTwiceDP
   hs-source-dirs:
       examples
   default-extensions:

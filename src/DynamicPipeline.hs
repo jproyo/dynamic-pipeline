@@ -22,7 +22,7 @@
 -- @
 -- import "DynamicPipeline"
 --
--- type DPExample = 'Source' ('Channel' (Int ':<+>' 'Eof')) ':>>' 'Generator' ('Channel' (Int ':<+>' 'Eof')) ':>>' 'Sink'
+-- type DPExample = 'Source' ('Channel' (Int ':<+>' 'Eof')) ':=>' 'Generator' ('Channel' (Int ':<+>' 'Eof')) ':=>' 'Sink'
 -- 
 -- source' :: 'Stage' ('WriteChannel' Int -> 'DP' s ())
 -- source' = 'withSource' @DPExample $ \cout -> 'unfoldT' ([1 .. 1000] <> [1 .. 1000]) cout identity
@@ -73,7 +73,8 @@ module DynamicPipeline
       Generator,
       Source,
       Channel,
-      type (:>>)(..),
+      FeedbackChannel,
+      type (:=>)(..),
       type (:<+>)(..), 
       -- * Smart Constructors 
       DynamicPipeline,
@@ -102,21 +103,22 @@ module DynamicPipeline
       mkUnfoldFilter',
       mkUnfoldFilterForAll,
       mkUnfoldFilterForAll',
-      (.*.), HList(HNil), hHead, 
+      (.*.), HList(HNil,HCons), hHead, hTail,
       -- * Channels
       ReadChannel,
       WriteChannel,
-      foldM,
-      foldM',
+      foldM_,
+      foldWithM_,
       push,
       pull,
+      finish,
       unfoldM,
       unfoldFile,
       unfoldT
     )
     where
 
-import Data.HList ((.*.), HList(HNil), hHead)
+import Data.HList ((.*.), HList(HNil,HCons), hHead, hTail)
 import DynamicPipeline.Flow
 import DynamicPipeline.Channel
 import DynamicPipeline.Stage
@@ -125,14 +127,14 @@ import DynamicPipeline.Stage
 -- The following is the Regular Grammar allowed to build a /DPP/ Flow definition:
 -- 
 -- @
--- __DP__     = 'Source'  __CHANS__ ':>>' 'Generator' __CHANS__ ':>>' 'Sink'
+-- __DP__     = 'Source'  __CHANS__ ':=>' 'Generator' __CHANS__ ':=>' 'Sink'
 -- __CHANS__  = 'Channel' __CH__
 -- __CH__     = 'Eof' | 'Type' ':<+>' __CH__
 -- @
 --
 -- Example: 
 -- 
--- @ 'Source' ('Channel' (Int ':<+>' Int)) ':>>' 'Generator' ('Channel' (Int ':<+>' Int)) ':>>' 'Sink' @
+-- @ 'Source' ('Channel' (Int ':<+>' Int)) ':=>' 'Generator' ('Channel' (Int ':<+>' Int)) ':=>' 'Sink' @
 --
 --
 -- $dp
@@ -149,7 +151,7 @@ import DynamicPipeline.Stage
 --
 -- >>> import Relude
 -- >>> import DynamicPipeline
--- >>> type DPEx = Source (Channel (Int :<+> Eof)) :>> Generator (Channel (Int :<+> Eof)) :>> Sink
+-- >>> type DPEx = Source (Channel (Int :<+> Eof)) :=> Generator (Channel (Int :<+> Eof)) :=> Sink
 -- >>> :t withSource @DPEx
 -- withSource @DPEx
 --   :: forall k (st :: k).

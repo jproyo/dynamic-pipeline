@@ -12,8 +12,8 @@
 module DynamicPipeline.Channel
   ( ReadChannel
   , WriteChannel
-  , DynamicPipeline.Channel.foldM
-  , foldM'
+  , foldM_
+  , foldWithM_
   , push
   , pull
   , unfoldM
@@ -21,6 +21,7 @@ module DynamicPipeline.Channel
   , unfoldT
   , newChannel
   , end
+  , finish
   ) where
 
 import qualified Control.Concurrent                                as CC
@@ -29,7 +30,8 @@ import           Control.Lens                                                   
                                                                                                                       )
 import           Data.ByteString                                   as B
 import           Data.Foldable                                     as F
-import           Data.HList
+import           Data.HList                                                                                    hiding ( foldM_
+                                                                                                                      )
 import           GHC.IO.Handle                                     as H
 import           Relude                                            as R
 
@@ -44,22 +46,23 @@ newtype WriteChannel a = WriteChannel { unWrite :: InChan (Maybe a) }
 -- [@a@]: Type that this Channel can read
 newtype ReadChannel a = ReadChannel { unRead :: OutChan (Maybe a) }
 
--- | 'foldM' is a /Catamorphism/ for consuming a 'ReadChannel' and do some Monadic @m@ computation with each element
-{-# INLINE foldM #-}
-foldM :: MonadIO m
-      => ReadChannel a -- ^'ReadChannel'
-      -> (a -> m ()) -- ^Computation to do with read element
-      -> m ()
-foldM = flip foldM' (pure ())
-
--- | Idem 'foldM' but allows pass a monadic computation to perform at the end of the Channel
-{-# INLINE foldM' #-}
-foldM' :: MonadIO m
+-- | 'foldM_' is a /Catamorphism/ for consuming a 'ReadChannel' and do some Monadic @m@ computation with each element
+{-# INLINE foldM_ #-}
+foldM_ :: MonadIO m
        => ReadChannel a -- ^'ReadChannel'
-       -> m () -- ^Computation to do at the end of the channel
        -> (a -> m ()) -- ^Computation to do with read element
        -> m ()
-foldM' = loop' where loop' c onNothing io = maybe onNothing (\e -> io e >> loop' c onNothing io) =<< liftIO (pull c)
+foldM_ = flip foldWithM_ (pure ())
+
+-- | Idem 'foldM_' but allows pass a monadic computation to perform at the end of the Channel
+{-# INLINE foldWithM_ #-}
+foldWithM_ :: MonadIO m
+           => ReadChannel a -- ^'ReadChannel'
+           -> m () -- ^Computation to do at the end of the channel
+           -> (a -> m ()) -- ^Computation to do with read element
+           -> m ()
+foldWithM_ = loop'
+  where loop' c onNothing io = maybe onNothing (\e -> io e >> loop' c onNothing io) =<< liftIO (pull c)
 
 -- | Push element @a@ into 'WriteChannel'
 {-# INLINE push #-}
@@ -70,6 +73,11 @@ push a c = liftIO $ writeChan (unWrite c) (Just a)
 {-# INLINE pull #-}
 pull :: MonadIO m => ReadChannel a -> m (Maybe a)
 pull = liftIO . readChan (CC.threadDelay 100) . unRead
+
+-- | Finalize Channel to indicate EOF mark and allow progress on following consumers
+finish :: MonadIO m => WriteChannel a -> m ()
+finish = liftIO . end
+
 
 -- | Coalgebra with Monadic computation to Feed some 'WriteChannel'
 --
@@ -114,4 +122,5 @@ newChannel = bimap WriteChannel ReadChannel <$> newChan
 {-# INLINE end #-}
 end :: WriteChannel a -> IO ()
 end = flip writeChan Nothing . unWrite
+
 
