@@ -107,11 +107,11 @@ module DynamicPipeline
       -- * Channels
       ReadChannel,
       WriteChannel,
-      foldM,
-      foldM',
+      foldM_,
+      foldWithM_,
       push,
       pull,
-      end,
+      finish,
       unfoldM,
       unfoldFile,
       unfoldT

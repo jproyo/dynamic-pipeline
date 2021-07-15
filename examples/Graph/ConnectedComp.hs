@@ -24,7 +24,7 @@ source' filePath = withSource @DPConnComp
   $ \edgeOut _ -> unfoldFile filePath edgeOut (toEdge . decodeUtf8)
 
 sink' :: Stage (ReadChannel Edge -> ReadChannel ConnectedComponents -> DP st ())
-sink' = withSink @DPConnComp $ \_ cc -> withDP $ foldM cc print
+sink' = withSink @DPConnComp $ \_ cc -> withDP $ foldM_ cc print
 
 generator' :: GeneratorStage DPConnComp ConnectedComponents Edge st
 generator' =
@@ -41,7 +41,7 @@ actor1 :: Edge
        -> WriteChannel ConnectedComponents
        -> StateT ConnectedComponents (DP st) ()
 actor1 _ readEdge _ writeEdge _ = 
-  foldM readEdge $ \e -> get >>= doActor e
+  foldM_ readEdge $ \e -> get >>= doActor e
  where
   doActor v conn
     | toConnectedComp v `intersect` conn = modify (toConnectedComp v <>)
@@ -54,7 +54,7 @@ actor2 :: Edge
        -> WriteChannel ConnectedComponents
        -> StateT ConnectedComponents (DP st) ()
 actor2 _ _ readCC _ writeCC = do 
-  foldM' readCC pushMemory $ \e -> get >>= doActor e
+  foldWithM_ readCC pushMemory $ \e -> get >>= doActor e
 
  where
    pushMemory = get >>= flip push writeCC
@@ -73,7 +73,7 @@ genAction :: Filter DPConnComp ConnectedComponents Edge st
 genAction filter' readEdge readCC _ writeCC = do
   let unfoldFilter = mkUnfoldFilterForAll filter' toConnectedComp readEdge (readCC .*. HNil) 
   results <- unfoldF unfoldFilter
-  foldM (hHead results) (`push` writeCC)
+  foldM_ (hHead results) (`push` writeCC)
 
 
 program :: FilePath -> IO ()
