@@ -2,11 +2,13 @@ module Main where
 
 import           Graph.ConnectedComp                               as CC
 import           Misc.RepeatedDP                                   as Repeated
+import           Misc.RepeatedTwiceDP                              as RepeatedTwice
 import           Options.Applicative                               as Opt
 import           Relude
 
 
 data ProgramOptions = RepeatedElements
+                    | RepeatedFeedback
                     | ConnectedComponents FilePath
                     deriving(Show)
 
@@ -14,8 +16,11 @@ data ProgramOptions = RepeatedElements
 programDesc :: ParserInfo ProgramOptions
 programDesc = info (everyProgram <**> helper) (fullDesc <> header "Examples on dynamic-pipeline library")
  where
-  everyProgram =
-    subparser (command "repeated-elements" subCmdRepeated <> command "connected-components" subCmdConnectedComp)
+  everyProgram = subparser
+    (  command "repeated-elements"    subCmdRepeated
+    <> command "repeated-feedback"    subCmdRepeatedFeed
+    <> command "connected-components" subCmdConnectedComp
+    )
 
 subCmdRepeated :: ParserInfo ProgramOptions
 subCmdRepeated = info
@@ -24,6 +29,12 @@ subCmdRepeated = info
     "Given a list of 2000 repeated Integers filter and output unique 1000 integers"
   )
 
+subCmdRepeatedFeed :: ParserInfo ProgramOptions
+subCmdRepeatedFeed = info
+  (pure RepeatedFeedback)
+  (fullDesc <> header "repeated-feedback - Dynamic Pipeline Examples" <> progDesc
+    "Given a list of 2000 repeated Integers filter and output unique 1000 integers and do it twice with feedback"
+  )
 
 subCmdConnectedComp :: ParserInfo ProgramOptions
 subCmdConnectedComp = info
@@ -45,6 +56,7 @@ main = execParser programDesc >>= main'
 
 main' :: ProgramOptions -> IO ()
 main' = \case
-    RepeatedElements -> Repeated.program
-    ConnectedComponents file -> CC.program file
+  RepeatedElements         -> Repeated.program
+  RepeatedFeedback         -> RepeatedTwice.program
+  ConnectedComponents file -> CC.program file
 

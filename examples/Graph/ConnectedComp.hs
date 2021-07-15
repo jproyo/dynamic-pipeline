@@ -14,8 +14,8 @@ import           Relude
 
 -- brittany-disable-next-binding
 type DPConnComp = Source (Channel (Edge :<+> ConnectedComponents :<+> Eof))
-                :>> Generator (Channel (Edge :<+> ConnectedComponents :<+> Eof))
-                :>> Sink
+                :=> Generator (Channel (Edge :<+> ConnectedComponents :<+> Eof))
+                :=> Sink
 
 source' :: FilePath
         -> Stage

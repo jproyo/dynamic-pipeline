@@ -11,7 +11,7 @@ module Misc.RepeatedDP where
 import           DynamicPipeline
 import           Relude
 
-type DPExample = Source (Channel (Int :<+> Eof)) :>> Generator (Channel (Int :<+> Eof)) :>> Sink
+type DPExample = Source (Channel (Int :<+> Eof)) :=> Generator (Channel (Int :<+> Eof)) :=> Sink
 
 source' :: Stage (WriteChannel Int -> DP s ())
 source' = withSource @DPExample $ \cout -> unfoldT ([1 .. 1000] <> [1 .. 1000]) cout identity
