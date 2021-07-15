@@ -56,15 +56,21 @@ type family And (a :: Bool) (b :: Bool) :: Bool where
 -- | FCF - Type Level Defunctionalization
 -- 'IsDP' Validates if /DP/ Flow Type Level Definition is Correct according to the Grammar
 --
--- [@dpDefinition ~ 'Source' ('Channel' ..) ':>>' 'Generator' ('Channel' ..) ':>>' 'Sink'@]: /DP/ Type level Flow Definition
+-- [@dpDefinition ~ 'Source' ('Channel' ..) ':=>' 'Generator' ('Channel' ..) ':=>' 'Sink'@]: /DP/ Type level Flow Definition
 --
 type family IsDP (dpDefinition :: k) :: Bool where
   IsDP (Source (Channel inToGen)
-        :>> Generator (Channel genToOut)
-        :>> Sink)
+        :=> Generator (Channel genToOut)
+        :=> Sink)
                                             = And (IsDP (Source (Channel inToGen))) (IsDP (Generator (Channel genToOut)))
-  IsDP (Source (Channel (a :<+> more)))      = IsDP (Source (Channel more))
-  IsDP (Source (Channel Eof))                = 'True
+  IsDP ( Source (Channel inToGen)
+         :=> Generator (Channel genToOut)
+         :=> FeedbackChannel toSource 
+         :=> Sink 
+        )
+                                            = And (IsDP (Source (Channel inToGen))) (IsDP (Generator (Channel genToOut)))
+  IsDP (Source (Channel (a :<+> more)))     = IsDP (Source (Channel more))
+  IsDP (Source (Channel Eof))               = 'True
   IsDP (Generator (Channel (a :<+> more)))  = IsDP (Generator (Channel more))
   IsDP (Generator (Channel a))              = 'True
   IsDP x                                    = 'False
@@ -81,16 +87,18 @@ type family ValidDP (a :: Bool) :: Constraint where
   ValidDP 'False = TypeError
                     ( 'Text "Invalid Semantic for Building DP Program"
                       ':$$: 'Text "Language Grammar:"
-                      ':$$: 'Text "DP    = Source CHANS :>> Generator CHANS :>> Sink"
+                      ':$$: 'Text "DP    = Source CHANS :=> Generator CHANS :=> Sink"
                       ':$$: 'Text "CHANS = Channel CH"
                       ':$$: 'Text "CH    = Type | Type :<+> CH"
-                      ':$$: 'Text "Example: 'Source (Channel (Int :<+> Int)) :>> Generator (Channel (Int :<+> Int)) :>> Sink'"
+                      ':$$: 'Text "Example: 'Source (Channel (Int :<+> Int)) :=> Generator (Channel (Int :<+> Int)) :=> Sink'"
                     )
 
 -- Inductive Type Family for Expanding and building Source, Generator, Filter and Sink Functions Signatures
 type family WithSource (dpDefinition :: Type) (monadicAction :: Type -> Type) :: Type where
-  WithSource (Source (Channel inToGen) :>> Generator (Channel genToOut) :>> Sink) monadicAction
-                                                                    = WithSource (ChanIn inToGen) monadicAction
+  WithSource (Source (Channel inToGen) :=> Generator (Channel genToOut) :=> Sink) monadicAction
+                                                                     = WithSource (ChanIn inToGen) monadicAction
+  WithSource (Source (Channel inToGen) :=> Generator (Channel genToOut) :=> FeedbackChannel toSource :=> Sink) monadicAction
+                                                                     = WithSource (ChanOutIn toSource inToGen) monadicAction
   WithSource (ChanIn (dpDefinition :<+> more)) monadicAction         = WriteChannel dpDefinition -> WithSource (ChanIn more) monadicAction
   WithSource (ChanIn Eof) monadicAction                              = monadicAction ()
   WithSource (ChanOutIn (dpDefinition :<+> more) ins) monadicAction  = ReadChannel dpDefinition -> WithSource (ChanOutIn more ins) monadicAction
@@ -101,53 +109,70 @@ type family WithSource (dpDefinition :: Type) (monadicAction :: Type -> Type) ::
                                                                           ':<>: 'ShowType dpDefinition
                                                                           ':<>: 'Text "'"
                                                                           ':$$: 'Text "Language Grammar:"
-                                                                          ':$$: 'Text "DP    = Source CHANS :>> Generator CHANS :>> Sink"
+                                                                          ':$$: 'Text "DP    = Source CHANS :=> Generator CHANS :=> Sink"
                                                                           ':$$: 'Text "CHANS = Channel CH"
                                                                           ':$$: 'Text "CH    = Type | Type :<+> CH"
-                                                                          ':$$: 'Text "Example: 'Source (Channel (Int :<+> Int)) :>> Generator (Channel (Int :<+> Int)) :>> Sink'"
+                                                                          ':$$: 'Text "Example: 'Source (Channel (Int :<+> Int)) :=> Generator (Channel (Int :<+> Int)) :=> Sink'"
                                                                         )
 
 type family WithGenerator (a :: Type) (filter :: Type) (monadicAction :: Type -> Type) :: Type where
-  WithGenerator (Source (Channel inToGen) :>> Generator (Channel genToOut) :>> Sink) filter monadicAction
-                                                                    = filter -> WithGenerator (ChanOutIn inToGen genToOut) filter monadicAction
-  WithGenerator (ChanIn (a :<+> more)) filter monadicAction         = WriteChannel a -> WithGenerator (ChanIn more) filter monadicAction
-  WithGenerator (ChanIn Eof) filter monadicAction                   = monadicAction ()
-  WithGenerator (ChanOutIn (a :<+> more) ins) filter monadicAction  = ReadChannel a -> WithGenerator (ChanOutIn more ins) filter monadicAction
-  WithGenerator (ChanOutIn Eof ins) filter monadicAction            = WithGenerator (ChanIn ins) filter monadicAction
-  WithGenerator dpDefinition _ _                                     = TypeError
-                                                                        ( 'Text "Invalid Semantic for Generator Stage"
-                                                                          ':$$: 'Text "in the DP Definition '"
-                                                                          ':<>: 'ShowType dpDefinition
-                                                                          ':<>: 'Text "'"
-                                                                          ':$$: 'Text "Language Grammar:"
-                                                                          ':$$: 'Text "DP    = Source CHANS :>> Generator CHANS :>> Sink"
-                                                                          ':$$: 'Text "CHANS = Channel CH"
-                                                                          ':$$: 'Text "CH    = Type | Type :<+> CH"
-                                                                          ':$$: 'Text "Example: 'Source (Channel (Int :<+> Int)) :>> Generator (Channel (Int :<+> Int)) :>> Sink'"
-                                                                        )
-
+  WithGenerator (Source (Channel inToGen) :=> Generator (Channel genToOut) :=> Sink) filter monadicAction
+                                                                         = filter -> WithGenerator (ChanOutIn inToGen genToOut) filter monadicAction
+  WithGenerator (Source (Channel inToGen) :=> Generator (Channel genToOut) :=> FeedbackChannel toSource :=> Sink) filter monadicAction
+                                                                         = filter -> WithGenerator (ChanOutIn inToGen (ChanInIn genToOut toSource)) filter monadicAction
+  WithGenerator (ChanInIn (a :<+> more) ins) filter monadicAction        = WriteChannel a -> WithGenerator (ChanInIn more ins) filter monadicAction
+  WithGenerator (ChanInIn Eof ins) filter monadicAction                  = WithGenerator (ChanIn ins) filter monadicAction
+  WithGenerator (ChanIn (a :<+> more)) filter monadicAction              = WriteChannel a -> WithGenerator (ChanIn more) filter monadicAction
+  WithGenerator (ChanIn Eof) filter monadicAction                        = monadicAction ()
+  WithGenerator (ChanOutIn (a :<+> more) ins) filter monadicAction       = ReadChannel a -> WithGenerator (ChanOutIn more ins) filter monadicAction
+  WithGenerator (ChanOutIn Eof (ChanInIn ins ins2)) filter monadicAction = WithGenerator (ChanInIn ins ins2) filter monadicAction
+  WithGenerator (ChanOutIn Eof ins) filter monadicAction                 = WithGenerator (ChanIn ins) filter monadicAction
+  WithGenerator dpDefinition _ _                                         = TypeError
+                                                                             ( 'Text "Invalid Semantic for Generator Stage"
+                                                                               ':$$: 'Text "in the DP Definition '"
+                                                                               ':<>: 'ShowType dpDefinition
+                                                                               ':<>: 'Text "'"
+                                                                               ':$$: 'Text "Language Grammar:"
+                                                                               ':$$: 'Text "DP    = Source CHANS :=> Generator CHANS :=> Sink"
+                                                                               ':$$: 'Text "CHANS = Channel CH"
+                                                                               ':$$: 'Text "CH    = Type | Type :<+> CH"
+                                                                               ':$$: 'Text "Example: 'Source (Channel (Int :<+> Int)) :=> Generator (Channel (Int :<+> Int)) :=> Sink'"
+                                                                             )
+     
 type family WithFilter (dpDefinition :: Type) (param :: Type) (monadicAction :: Type -> Type) :: Type where
-  WithFilter (Source (Channel inToGen) :>> Generator (Channel genToOut) :>> Sink) param monadicAction
+  WithFilter (Source (Channel inToGen) :=> Generator (Channel genToOut) :=> Sink) param monadicAction
                                                     = param -> WithFilter (ChanOutIn inToGen genToOut) param monadicAction
-  WithFilter (ChanIn (dpDefinition :<+> more)) param monadicAction         = WriteChannel dpDefinition -> WithFilter (ChanIn more) param monadicAction
-  WithFilter (ChanIn Eof) param monadicAction                   = monadicAction ()
-  WithFilter (ChanOutIn (dpDefinition :<+> more) ins) param monadicAction  = ReadChannel dpDefinition -> WithFilter (ChanOutIn more ins) param monadicAction
+  WithFilter (Source (Channel inToGen) :=> Generator (Channel genToOut) :=> FeedbackChannel toSource  :=> Sink) param monadicAction
+                                                    = param -> WithFilter (ChanOutIn inToGen (ChanInIn genToOut toSource)) param monadicAction
+  WithFilter (ChanInIn (a :<+> more) ins) param monadicAction       
+                                                    = WriteChannel a -> WithFilter (ChanInIn more ins) param monadicAction
+  WithFilter (ChanInIn Eof ins) param monadicAction                 
+                                                    = WithFilter (ChanIn ins) param monadicAction
+  WithFilter (ChanIn (dpDefinition :<+> more)) param monadicAction         
+                                                    = WriteChannel dpDefinition -> WithFilter (ChanIn more) param monadicAction
+  WithFilter (ChanIn Eof) param monadicAction       = monadicAction ()
+  WithFilter (ChanOutIn (dpDefinition :<+> more) ins) param monadicAction  
+                                                    = ReadChannel dpDefinition -> WithFilter (ChanOutIn more ins) param monadicAction
+  WithFilter (ChanOutIn Eof (ChanInIn ins ins2)) param monadicAction 
+                                                    = WithFilter (ChanInIn ins ins2) param monadicAction
   WithFilter (ChanOutIn Eof ins) param m            = WithFilter (ChanIn ins) param m
-  WithFilter dpDefinition _ _                                  = TypeError
-                                                ( 'Text "Invalid Semantic Semantic for Generator Stage"
-                                                  ':$$: 'Text "in the DP Definition '"
-                                                  ':<>: 'ShowType dpDefinition
-                                                  ':<>: 'Text "'"
-                                                  ':$$: 'Text "Language Grammar:"
-                                                  ':$$: 'Text "DP    = Source CHANS :>> Generator CHANS :>> Sink"
-                                                  ':$$: 'Text "CHANS = Channel CH"
-                                                  ':$$: 'Text "CH    = Type | Type :<+> CH"
-                                                  ':$$: 'Text "Example: 'Source (Channel (Int :<+> Int)) :>> Generator (Channel (Int :<+> Int)) :>> Sink'"
-                                                )
+  WithFilter dpDefinition _ _                       = TypeError
+                                                        ( 'Text "Invalid Semantic Semantic for Generator Stage"
+                                                          ':$$: 'Text "in the DP Definition '"
+                                                          ':<>: 'ShowType dpDefinition
+                                                          ':<>: 'Text "'"
+                                                          ':$$: 'Text "Language Grammar:"
+                                                          ':$$: 'Text "DP    = Source CHANS :=> Generator CHANS :=> Sink"
+                                                          ':$$: 'Text "CHANS = Channel CH"
+                                                          ':$$: 'Text "CH    = Type | Type :<+> CH"
+                                                          ':$$: 'Text "Example: 'Source (Channel (Int :<+> Int)) :=> Generator (Channel (Int :<+> Int)) :=> Sink'"
+                                                        )
 
 type family WithSink (dpDefinition :: Type) (monadicAction :: Type -> Type) :: Type where
-  WithSink (Source (Channel inToGen) :>> Generator (Channel genToOut) :>> Sink) monadicAction
-                                                                = WithSink (ChanOut genToOut) monadicAction
+  WithSink (Source (Channel inToGen) :=> Generator (Channel genToOut) :=> Sink) monadicAction
+                                                              = WithSink (ChanOut genToOut) monadicAction
+  WithSink (Source (Channel inToGen) :=> Generator (Channel genToOut) :=> FeedbackChannel toSource :=> Sink) monadicAction
+                                                              = WithSink (ChanOut genToOut) monadicAction
   WithSink (ChanOut (dpDefinition :<+> more)) monadicAction   = ReadChannel dpDefinition -> WithSink (ChanOut more) monadicAction
   WithSink (ChanOut Eof) monadicAction                        = monadicAction ()
   WithSink dpDefinition _                                     = TypeError
@@ -156,10 +181,10 @@ type family WithSink (dpDefinition :: Type) (monadicAction :: Type -> Type) :: T
                                                                       ':<>: 'ShowType dpDefinition
                                                                       ':<>: 'Text "'"
                                                                       ':$$: 'Text "Language Grammar:"
-                                                                      ':$$: 'Text "DP    = Source CHANS :>> Generator CHANS :>> Sink"
+                                                                      ':$$: 'Text "DP    = Source CHANS :=> Generator CHANS :=> Sink"
                                                                       ':$$: 'Text "CHANS = Channel CH"
                                                                       ':$$: 'Text "CH    = Type | Type :<+> CH"
-                                                                      ':$$: 'Text "Example: 'Source (Channel (Int :<+> Int)) :>> Generator (Channel (Int :<+> Int)) :>> Sink'"
+                                                                      ':$$: 'Text "Example: 'Source (Channel (Int :<+> Int)) :=> Generator (Channel (Int :<+> Int)) :=> Sink'"
                                                                     )
 
 
@@ -211,7 +236,7 @@ runStageWith' fn cIns cClose = withDP (async (runStage (hUncurry (run fn) cIns) 
 -- | 'DynamicPipeline' data type which contains all the three Stages definitions that have been generated by other combinators like 'withSource',
 -- 'withGenerator' and 'withSink'.
 --
--- [@dpDefinition ~ 'Source' ('Channel' ..) ':>>' 'Generator' ('Channel' ..) ':>>' 'Sink'@]: /DP/ Type level Flow Definition
+-- [@dpDefinition ~ 'Source' ('Channel' ..) ':=>' 'Generator' ('Channel' ..) ':=>' 'Sink'@]: /DP/ Type level Flow Definition
 --
 -- [@filterState@]: State of the 'StateT' 'Monad' that is the local State of the Filter execution
 --
@@ -229,7 +254,7 @@ data DynamicPipeline dpDefinition filterState filterParam st =
 -- in orther to know how to spawn a new 'Filter' if it is needed, and the 'Stage' of the Generator to allow the user to perform some computation
 -- in that case.
 --
--- [@dpDefinition ~ 'Source' ('Channel' ..) ':>>' 'Generator' ('Channel' ..) ':>>' 'Sink'@]: /DP/ Type level Flow Definition
+-- [@dpDefinition ~ 'Source' ('Channel' ..) ':=>' 'Generator' ('Channel' ..) ':=>' 'Sink'@]: /DP/ Type level Flow Definition
 --
 -- [@filterState@]: State of the 'StateT' 'Monad' that is the local State of the Filter execution
 --
@@ -249,7 +274,7 @@ data GeneratorStage dpDefinition filterState filterParam st = GeneratorStage
 -- 
 -- * All the 'Filter' execution (a.k.a. @forM_ actors runStage@) executes in a 'StateT' 'Monad' to share an internal state among 'Actor's.
 --
--- [@dpDefinition ~ 'Source' ('Channel' ..) ':>>' 'Generator' ('Channel' ..) ':>>' 'Sink'@]: /DP/ Type level Flow Definition
+-- [@dpDefinition ~ 'Source' ('Channel' ..) ':=>' 'Generator' ('Channel' ..) ':=>' 'Sink'@]: /DP/ Type level Flow Definition
 --
 -- [@filterState@]: State of the 'StateT' 'Monad' that is the local State of the Filter execution
 --
@@ -264,7 +289,7 @@ instance Wrapped (Filter s' s a param)
 
 -- | 'Actor' Is a particular 'Stage' computation inside a 'Filter'.
 --
--- [@dpDefinition ~ 'Source' ('Channel' ..) ':>>' 'Generator' ('Channel' ..) ':>>' 'Sink'@]: /DP/ Type level Flow Definition
+-- [@dpDefinition ~ 'Source' ('Channel' ..) ':=>' 'Generator' ('Channel' ..) ':=>' 'Sink'@]: /DP/ Type level Flow Definition
 --
 -- [@filterState@]: State of the 'StateT' 'Monad' that is the local State of the Filter execution
 --
@@ -343,7 +368,7 @@ runFilter f s clist cClose = DP $ async $ do
 
 -- | Combinator for Building a 'Source' Stage. It uses an Associated Type Class to deduce the Function Signature required to the user
 -- taken from /DP/ Type Level Flow Definition 
--- [@dpDefinition ~ 'Source' ('Channel' ..) ':>>' 'Generator' ('Channel' ..) ':>>' 'Sink'@]: /DP/ Type level Flow Definition
+-- [@dpDefinition ~ 'Source' ('Channel' ..) ':=>' 'Generator' ('Channel' ..) ':=>' 'Sink'@]: /DP/ Type level Flow Definition
 --
 -- [@st@]: Existential Scope of 'DP' 'Monad'.
 {-# INLINE withSource #-}
@@ -354,7 +379,7 @@ withSource = mkStage' @(WithSource dpDefinition (DP st))
 
 -- | Combinator for Building a 'Generator' Stage. It uses an Associated Type Class to deduce the Function Signature required to the user
 -- taken from /DP/ Type Level Flow Definition 
--- [@dpDefinition ~ 'Source' ('Channel' ..) ':>>' 'Generator' ('Channel' ..) ':>>' 'Sink'@]: /DP/ Type level Flow Definition
+-- [@dpDefinition ~ 'Source' ('Channel' ..) ':=>' 'Generator' ('Channel' ..) ':=>' 'Sink'@]: /DP/ Type level Flow Definition
 --
 -- [@filter@]: 'Filter' template type
 --
@@ -367,7 +392,7 @@ withGenerator = mkStage' @(WithGenerator dpDefinition filter (DP st))
 
 -- | Combinator for Building a 'Sink' Stage. It uses an Associated Type Class to deduce the Function Signature required to the user
 -- taken from /DP/ Type Level Flow Definition 
--- [@dpDefinition ~ 'Source' ('Channel' ..) ':>>' 'Generator' ('Channel' ..) ':>>' 'Sink'@]: /DP/ Type level Flow Definition
+-- [@dpDefinition ~ 'Source' ('Channel' ..) ':=>' 'Generator' ('Channel' ..) ':=>' 'Sink'@]: /DP/ Type level Flow Definition
 --
 -- [@st@]: Existential Scope of 'DP' 'Monad'.
 {-# INLINE withSink #-}
@@ -385,31 +410,36 @@ mkDP' :: forall dpDefinition filterState filterParam st.
 mkDP' = DynamicPipeline @dpDefinition
 
 -- Hiding DP Constraint for running DP
-type DPConstraint dpDefinition filterState st filterParam filter iparams gparams oparams r2 r3 l1 r4 l2 t2 s1 t1 s2 t5 l3 l4 =
-  ( MkChans dpDefinition
-  , HChan dpDefinition ~ r3 t2
-  , Filter dpDefinition filterState filterParam st ~ filter
-  , CloseList l3
-  , CloseList l4
-  , CloseList (HAppendListR l1 l2)
-  , iparams ~ WithSource dpDefinition (DP st)
-  , gparams ~ WithGenerator dpDefinition filter (DP st)
-  , oparams ~ WithSink dpDefinition (DP st)
-  , ArityRev iparams (HLength (ExpandSourceToCh dpDefinition))
-  , ArityFwd iparams (HLength (ExpandSourceToCh dpDefinition))
-  , HCurry' (HLength (ExpandSourceToCh dpDefinition)) iparams l3 (DP st ())
-  , ArityRev gparams (HLength (ExpandGenToCh dpDefinition filter))
-  , ArityFwd gparams (HLength (ExpandGenToCh dpDefinition filter))
-  , HCurry' (HLength (ExpandGenToCh dpDefinition filter)) gparams (filter ': HAppendListR l1 l2) (DP st ())
-  , ArityRev oparams (HLength (ExpandSinkToCh dpDefinition))
-  , ArityFwd oparams (HLength (ExpandSinkToCh dpDefinition))
-  , HCurry' (HLength (ExpandSinkToCh dpDefinition)) oparams l4 (DP st ())
-  , AllChans r2 r3 l1 r4 l2 t2 s1 t1 s2 t5 l3 l4)
+type DPConstraint dpDefinition filterState st filterParam filter gparams slr slw glr glw silr silw iparams oparams ls lsi 
+  = ( MkChans dpDefinition
+    , HChan dpDefinition ~ ChanRecord slr slw glr glw silr silw
+    , HAppendList slr slw
+    , HAppendList glr glw
+    , HAppendList silr silw
+    , Filter dpDefinition filterState filterParam st ~ filter
+    , ls ~ HAppendListR slr slw
+    , lsi ~ HAppendListR silr silw
+    , CloseList ls
+    , CloseList lsi
+    , CloseList (HAppendListR glr glw)
+    , iparams ~ WithSource dpDefinition (DP st)
+    , gparams ~ WithGenerator dpDefinition filter (DP st)
+    , oparams ~ WithSink dpDefinition (DP st)
+    , ArityRev iparams (HLength (ExpandSourceToCh dpDefinition))
+    , ArityFwd iparams (HLength (ExpandSourceToCh dpDefinition))
+    , HCurry' (HLength (ExpandSourceToCh dpDefinition)) iparams ls (DP st ())
+    , ArityRev gparams (HLength (ExpandGenToCh dpDefinition filter))
+    , ArityFwd gparams (HLength (ExpandGenToCh dpDefinition filter))
+    , HCurry' (HLength (ExpandGenToCh dpDefinition filter)) gparams (filter ': HAppendListR glr glw) (DP st ())
+    , ArityRev oparams (HLength (ExpandSinkToCh dpDefinition))
+    , ArityFwd oparams (HLength (ExpandSinkToCh dpDefinition))
+    , HCurry' (HLength (ExpandSinkToCh dpDefinition)) oparams lsi (DP st ())
+    )
 
 {-# INLINE buildDPProg #-}
-buildDPProg :: forall dpDefinition filterState st filterParam filter iparams gparams oparams r2 r3 l1 r4 l2 t2 s1 t1 s2 t5 l3 l4.
-               DPConstraint dpDefinition filterState st filterParam filter iparams gparams oparams r2 r3 l1 r4 l2 t2 s1 t1 s2 t5 l3 l4
-            => DynamicPipeline dpDefinition filterState filterParam st -> DP st ()
+buildDPProg :: forall dpDefinition filterState st filterParam filter gparams slr slw glr glw silr silw iparams oparams ls lsi.
+            DPConstraint dpDefinition filterState st filterParam filter gparams slr slw glr glw silr silw iparams oparams ls lsi => 
+            DynamicPipeline dpDefinition filterState filterParam st -> DP st ()
 buildDPProg DynamicPipeline{..} = do
   (cIns, cGen, cOut) <- inGenOut <$> withDP (makeChans @dpDefinition)
   let genWithFilter   = _gsFilterTemplate generator .*. cGen
@@ -419,8 +449,8 @@ buildDPProg DynamicPipeline{..} = do
 
 -- | Smart constructor for 'DynamicPipeline' Definition
 {-# INLINE mkDP #-}
-mkDP :: forall dpDefinition filterState st filterParam filter iparams gparams oparams r2 r3 l1 r4 l2 t2 s1 t1 s2 t5 l3 l4.
-        DPConstraint dpDefinition filterState st filterParam filter iparams gparams oparams r2 r3 l1 r4 l2 t2 s1 t1 s2 t5 l3 l4
+mkDP :: forall dpDefinition filterState st filterParam filter gparams slr slw glr glw silr silw iparams oparams ls lsi.
+        DPConstraint dpDefinition filterState st filterParam filter gparams slr slw glr glw silr silw iparams oparams ls lsi
      => Stage (WithSource dpDefinition (DP st)) -- ^ 'Source' Stage generated by 'withSource' combinator
      -> GeneratorStage dpDefinition filterState filterParam st  -- ^ 'Generator' Stage generated by 'withGenerator' combinator
      -> Stage (WithSink dpDefinition (DP st))   -- ^ 'Sink' Stage generated by 'withSink' combinator
@@ -454,15 +484,14 @@ instance IsClosable (ReadChannel a) where
   close = const $ pure ()
 
 -- | 'SpawnFilterConstraint' Constraint type alias
-type SpawnFilterConstraint dpDefinition readElem st filterState filterParam l r t l1 b0 l2 l3 b2 b3 l4 =
+type SpawnFilterConstraint dpDefinition readElem st filterState filterParam l l1 l2 l3 b2 b3 l4 =
                 ( MkChans (ChansFilter dpDefinition)
-                , FilterChans r (HList l3) t (HList (ReadChannel readElem : l1))
                 , l1 ~ l
                 , CloseList (ReadChannel readElem ': l4)
                 , HAppendList l l3
                 , l4 ~ HAppendListR l l3
                 , l2 ~ (readElem ': ReadChannel readElem ': l4)
-                , HChan (ChansFilter dpDefinition) ~ r t
+                , HChan (ChansFilter dpDefinition) ~ InOutChan (ReadChannel readElem : l) l3
                 , WithFilter dpDefinition filterParam (StateT filterState (DP st)) ~ (b2 -> ReadChannel b2 -> b3)
                 , HLength (ExpandFilterToCh dpDefinition filterParam) ~ HLength l2
                 , HCurry' (HLength l2) (WithFilter dpDefinition filterParam (StateT filterState (DP st))) l2 (StateT filterState (DP st) ())
@@ -474,7 +503,7 @@ type SpawnFilterConstraint dpDefinition readElem st filterState filterParam l r 
 -- The user will have the capability to select how those filters are going to be spawned, for example on each read element, how to setup
 -- initial states of 'StateT' Monad on 'Actor' computations in filters, among others.
 --
--- [@dpDefinition ~ 'Source' ('Channel' ..) ':>>' 'Generator' ('Channel' ..) ':>>' 'Sink'@]: /DP/ Type level Flow Definition
+-- [@dpDefinition ~ 'Source' ('Channel' ..) ':=>' 'Generator' ('Channel' ..) ':=>' 'Sink'@]: /DP/ Type level Flow Definition
 --
 -- [@readElem@]: Type of the element that is being read from the Selected Channel in the 'Generator' Stage
 --
@@ -537,8 +566,8 @@ mkUnfoldFilterForAll' = mkUnfoldFilter (const True)
 
 -- | Run 'UnFoldFilter'
 {-# INLINE unfoldF #-}
-unfoldF :: forall dpDefinition readElem st filterState filterParam l r t l1 b0 l2 l3 b2 b3 l4.
-           SpawnFilterConstraint dpDefinition readElem st filterState filterParam l r t l1 b0 l2 l3 b2 b3 l4
+unfoldF :: forall dpDefinition readElem st filterState filterParam l l1 l2 l3 b2 b3 l4.
+           SpawnFilterConstraint dpDefinition readElem st filterState filterParam l l1 l2 l3 b2 b3 l4
         => UnFoldFilter dpDefinition readElem st filterState filterParam l -- ^ 'UnFoldFilter'
         -> DP st (HList l) -- ^Return the list of 'ReadChannel's with the results to be read for the 'Generator' at the end. You can use this to pass the results to 'Sink'
 unfoldF = loopSpawn
@@ -551,7 +580,7 @@ unfoldF = loopSpawn
       _ufOnElem elem'
       if _ufSpawnIf elem'
         then do
-          (reads', writes' :: HList l3) <- getFilterChannels <$> DP (makeChans @(ChansFilter dpDefinition))
+          (reads', writes' :: HList l3) <- getFilterChannels <$> DP (makeChansF @(ChansFilter dpDefinition))
           let hlist = elem' .*. _ufReadChannel .*. (_ufRsChannels `hAppendList` writes')
           void $ runFilter _ufFilter (_ufInitState elem') hlist (_ufReadChannel .*. (_ufRsChannels `hAppendList` writes'))
           return $ uf { _ufReadChannel = hHead reads', _ufRsChannels = hTail reads' }
