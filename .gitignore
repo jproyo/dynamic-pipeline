@@ -17,6 +17,7 @@ cabal.sandbox.config
 *.eventlog
 .stack-work/
 cabal.project.local
+cabal.project.local~
 .HTF/
 TAGS
 HList-0.5.0.0/
