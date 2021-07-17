@@ -135,15 +135,20 @@ import DynamicPipeline.Stage
 -- The following is the Regular Grammar allowed to build a /DPP/ Flow definition:
 -- 
 -- @
--- __DP__     = 'Source'  __CHANS__ ':=>' 'Generator' __CHANS__ ':=>' 'Sink'
--- __CHANS__  = 'Channel' __CH__
--- __CH__     = 'Eof' | 'Type' ':<+>' __CH__
+-- __DP__       -> 'Source' __CHANS__ ':=>' 'Generator' __CHANS__ ':=>' 'Sink'
+-- __DP__       -> 'Source' __CHANS ':=>' 'Generator' __CHANS__ ':=>' __FEEDBACK__ ':=>' 'Sink'
+-- __CHANS__    -> 'Channel' __CH__
+-- __FEEDBACK__ -> 'FeedbackChannel' __CH__
+-- __CH__       -> 'Type' ':<+>' __CH__ | 'Eof'
 -- @
 --
 -- Example: 
 -- 
 -- @ 'Source' ('Channel' (Int ':<+>' Int)) ':=>' 'Generator' ('Channel' (Int ':<+>' Int)) ':=>' 'Sink' @
 --
+-- Or with Feedback Channel to retrofit Streamming
+--
+-- @ 'Source' ('Channel' (Int ':<+>' Int)) ':=>' 'Generator' ('Channel' (Int ':<+>' Int)) ':=>' 'FeedbackChannel' ('String' ':<+>' 'Eof') ':=>' 'Sink' @
 --
 -- $dp
 -- 'DynamicPipeline' Data type is the point where all the information is contained in order the library can run our /DP/ Algorithm.

@@ -1,5 +1,5 @@
 name:       dynamic-pipeline
-version:    0.3.0.0
+version:    0.3.1.0
 category:   Data,Data Flow,Pipes,Streaming,Parallel,Type-safe
 author:     Juan Pablo Royo Sales
 maintainer: juanpablo.royo@gmail.com
