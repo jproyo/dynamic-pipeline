@@ -42,7 +42,7 @@ import           Control.Concurrent.Async
 import           Control.Lens             hiding ((<|))
 import           Data.HList
 import           Data.List.NonEmpty
-import           DynamicPipeline.Channel
+import           DynamicPipeline.Channel hiding (mapM_)
 import           DynamicPipeline.Flow
 import           GHC.TypeLits
 import           Relude                   as R
@@ -87,9 +87,11 @@ type family ValidDP (a :: Bool) :: Constraint where
   ValidDP 'False = TypeError
                     ( 'Text "Invalid Semantic for Building DP Program"
                       ':$$: 'Text "Language Grammar:"
-                      ':$$: 'Text "DP    = Source CHANS :=> Generator CHANS :=> Sink"
-                      ':$$: 'Text "CHANS = Channel CH"
-                      ':$$: 'Text "CH    = Type | Type :<+> CH"
+                      ':$$: 'Text "DP       -> Source CHANS :=> Generator CHANS :=> Sink"
+                      ':$$: 'Text "DP       -> Source CHANS :=> Generator CHANS :=> FEEDBACK :=> Sink"
+                      ':$$: 'Text "CHANS    -> Channel CH"
+                      ':$$: 'Text "FEEDBACK -> FeedbackChannel CH"
+                      ':$$: 'Text "CH       -> Type :<+> CH | Eof"
                       ':$$: 'Text "Example: 'Source (Channel (Int :<+> Int)) :=> Generator (Channel (Int :<+> Int)) :=> Sink'"
                     )
 
@@ -109,9 +111,11 @@ type family WithSource (dpDefinition :: Type) (monadicAction :: Type -> Type) ::
                                                                           ':<>: 'ShowType dpDefinition
                                                                           ':<>: 'Text "'"
                                                                           ':$$: 'Text "Language Grammar:"
-                                                                          ':$$: 'Text "DP    = Source CHANS :=> Generator CHANS :=> Sink"
-                                                                          ':$$: 'Text "CHANS = Channel CH"
-                                                                          ':$$: 'Text "CH    = Type | Type :<+> CH"
+                                                                          ':$$: 'Text "DP       -> Source CHANS :=> Generator CHANS :=> Sink"
+                                                                          ':$$: 'Text "DP       -> Source CHANS :=> Generator CHANS :=> FEEDBACK :=> Sink"
+                                                                          ':$$: 'Text "CHANS    -> Channel CH"
+                                                                          ':$$: 'Text "FEEDBACK -> FeedbackChannel CH"
+                                                                          ':$$: 'Text "CH       -> Type :<+> CH | Eof"
                                                                           ':$$: 'Text "Example: 'Source (Channel (Int :<+> Int)) :=> Generator (Channel (Int :<+> Int)) :=> Sink'"
                                                                         )
 
@@ -133,9 +137,11 @@ type family WithGenerator (a :: Type) (filter :: Type) (monadicAction :: Type ->
                                                                                ':<>: 'ShowType dpDefinition
                                                                                ':<>: 'Text "'"
                                                                                ':$$: 'Text "Language Grammar:"
-                                                                               ':$$: 'Text "DP    = Source CHANS :=> Generator CHANS :=> Sink"
-                                                                               ':$$: 'Text "CHANS = Channel CH"
-                                                                               ':$$: 'Text "CH    = Type | Type :<+> CH"
+                                                                               ':$$: 'Text "DP       -> Source CHANS :=> Generator CHANS :=> Sink"
+                                                                               ':$$: 'Text "DP       -> Source CHANS :=> Generator CHANS :=> FEEDBACK :=> Sink"
+                                                                               ':$$: 'Text "CHANS    -> Channel CH"
+                                                                               ':$$: 'Text "FEEDBACK -> FeedbackChannel CH"
+                                                                               ':$$: 'Text "CH       -> Type :<+> CH | Eof"
                                                                                ':$$: 'Text "Example: 'Source (Channel (Int :<+> Int)) :=> Generator (Channel (Int :<+> Int)) :=> Sink'"
                                                                              )
      
@@ -162,9 +168,11 @@ type family WithFilter (dpDefinition :: Type) (param :: Type) (monadicAction :: 
                                                           ':<>: 'ShowType dpDefinition
                                                           ':<>: 'Text "'"
                                                           ':$$: 'Text "Language Grammar:"
-                                                          ':$$: 'Text "DP    = Source CHANS :=> Generator CHANS :=> Sink"
-                                                          ':$$: 'Text "CHANS = Channel CH"
-                                                          ':$$: 'Text "CH    = Type | Type :<+> CH"
+                                                          ':$$: 'Text "DP       -> Source CHANS :=> Generator CHANS :=> Sink"
+                                                          ':$$: 'Text "DP       -> Source CHANS :=> Generator CHANS :=> FEEDBACK :=> Sink"
+                                                          ':$$: 'Text "CHANS    -> Channel CH"
+                                                          ':$$: 'Text "FEEDBACK -> FeedbackChannel CH"
+                                                          ':$$: 'Text "CH       -> Type :<+> CH | Eof"
                                                           ':$$: 'Text "Example: 'Source (Channel (Int :<+> Int)) :=> Generator (Channel (Int :<+> Int)) :=> Sink'"
                                                         )
 
@@ -181,9 +189,11 @@ type family WithSink (dpDefinition :: Type) (monadicAction :: Type -> Type) :: T
                                                                       ':<>: 'ShowType dpDefinition
                                                                       ':<>: 'Text "'"
                                                                       ':$$: 'Text "Language Grammar:"
-                                                                      ':$$: 'Text "DP    = Source CHANS :=> Generator CHANS :=> Sink"
-                                                                      ':$$: 'Text "CHANS = Channel CH"
-                                                                      ':$$: 'Text "CH    = Type | Type :<+> CH"
+                                                                      ':$$: 'Text "DP       -> Source CHANS :=> Generator CHANS :=> Sink"
+                                                                      ':$$: 'Text "DP       -> Source CHANS :=> Generator CHANS :=> FEEDBACK :=> Sink"
+                                                                      ':$$: 'Text "CHANS    -> Channel CH"
+                                                                      ':$$: 'Text "FEEDBACK -> FeedbackChannel CH"
+                                                                      ':$$: 'Text "CH       -> Type :<+> CH | Eof"
                                                                       ':$$: 'Text "Example: 'Source (Channel (Int :<+> Int)) :=> Generator (Channel (Int :<+> Int)) :=> Sink'"
                                                                     )
 

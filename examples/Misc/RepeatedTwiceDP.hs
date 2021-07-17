@@ -18,9 +18,9 @@ type DPExample =   Source (Channel (Int :<+> Int :<+> Double :<+> String :<+> Eo
 
 source' :: Stage (ReadChannel String -> WriteChannel Int -> WriteChannel Int -> WriteChannel Double -> WriteChannel String -> DP st ())
 source' = withSource @DPExample $ \feedback cout cout' cout'' toFilter -> do 
+    finish cout' >> finish cout''
     unfoldT ([1 .. 10] <> [1 .. 10]) cout identity
-    finish cout >> finish cout' >> finish cout''
-    foldM_ feedback (`push` toFilter)
+    feedback |=> toFilter
 
 generator' :: GeneratorStage DPExample (Maybe Int) Int s
 generator' =
@@ -40,9 +40,8 @@ genAction :: Filter DPExample (Maybe Int) Int st
 genAction filter' cin cin' cdn cin'' _ _ odn cout = do
     let unfoldFilter = mkUnfoldFilterForAll filter' Just cin (cin' .*. cdn .*. cin'' .*. HNil)
     HCons ft (HCons sec _) <- unfoldF unfoldFilter
-    foldM_ ft $ flip push cout . show
-    finish cout
-    foldM_ sec $ flip push odn 
+    ft |=>| cout $ show
+    sec |=>| odn $ id
 
 filterTemp :: Filter DPExample (Maybe Int) Int s 
 filterTemp = mkFilter actorRepeted
@@ -58,23 +57,20 @@ actorRepeted :: Int
              -> WriteChannel String
              -> StateT (Maybe Int) (DP s) ()
 actorRepeted i rc rc' rd rs wc wc' wd wc'' = do
-  foldM_ rc $ \e -> do 
-    putTextLn $ "1) Elem: " <> show e <> " - Param: " <> show i
-    if e /= i then push e wc else pure ()
-  finish wc
+  rc |>=>| wc $ \e -> do 
+    -- putTextLn $ "1) Elem: " <> show e <> " - Param: " <> show i
+    if e /= i then pure $ Just e else pure Nothing
   push i wc'
-  foldM_ rc' $ \e -> do 
-    putTextLn $ "2) Elem: " <> show e <> " - Param: " <> show i
-    push e wc'
-  finish wc'
+  rc' |>=>| wc' $ \e -> do 
+    -- putTextLn $ "2) Elem: " <> show e <> " - Param: " <> show i
+    pure $ Just e
   foldM_ rs $ \e -> 
     let x = maybe 0 identity $ readMaybe @Int e 
      in if i == x 
           then push (fromIntegral x) wd
           else push e wc''
   finish wc''
-  foldM_ rd $ flip push wd
-  finish wd
+  rd |=>| wd $ id
 
 
 sink' :: Stage (ReadChannel Int -> ReadChannel Int -> ReadChannel Double -> DP s ())

@@ -12,6 +12,14 @@
 module DynamicPipeline.Channel
   ( ReadChannel
   , WriteChannel
+  , (|=>)
+  , (|=>|)
+  , (|>=>)
+  , (|>=>|)
+  , mapF_
+  , map_
+  , mapM_
+  , mapMF_
   , foldM_
   , foldWithM_
   , push
@@ -30,10 +38,15 @@ import           Control.Lens                                                   
                                                                                                                       )
 import           Data.ByteString                                   as B
 import           Data.Foldable                                     as F
+                                                                                                               hiding ( mapM_
+                                                                                                                      )
 import           Data.HList                                                                                    hiding ( foldM_
+                                                                                                                      , mapM_
                                                                                                                       )
 import           GHC.IO.Handle                                     as H
 import           Relude                                            as R
+                                                                                                               hiding ( mapM_
+                                                                                                                      )
 
 
 -- | 'WriteChannel' can only write values into some Channel Queue
@@ -45,6 +58,68 @@ newtype WriteChannel a = WriteChannel { unWrite :: InChan (Maybe a) }
 -- 
 -- [@a@]: Type that this Channel can read
 newtype ReadChannel a = ReadChannel { unRead :: OutChan (Maybe a) }
+
+-- | 'map_' is a /Natural Transformation/ from consumer 'ReadChannel' to some producer 'WriteChannel' applying a transformation with function @f@
+{-# INLINE map_ #-}
+map_ :: MonadIO m
+     => ReadChannel a -- ^'ReadChannel'
+     -> WriteChannel b -- ^'ReadChannel'
+     -> (a -> b) -- ^Monadic Transformation to do with read element
+     -> m ()
+map_ rc wc f = foldM_ rc $ flip push wc . f
+
+-- | Same as 'map_' but with 'id' combinator
+(|=>) :: MonadIO m => ReadChannel a -> WriteChannel a -> m ()
+(|=>) rc wc = map_ rc wc id
+
+infixl 5 |=>
+
+-- | Same as 'map_' but mark Eof Channel after all processing
+{-# INLINE mapF_ #-}
+mapF_ :: MonadIO m
+      => ReadChannel a -- ^'ReadChannel'
+      -> WriteChannel b -- ^'ReadChannel'
+      -> (a -> b) -- ^Monadic Transformation to do with read element
+      -> m ()
+mapF_ rc wc f = map_ rc wc f >> finish wc
+
+-- | Alias 'mapF_'
+(|=>|) :: MonadIO m => ReadChannel a -> WriteChannel b -> (a -> b) -> m ()
+(|=>|) = mapF_
+
+infixl 5 |=>|
+
+
+-- | Same as 'map_' But applying a Monadic mapping
+{-# INLINE mapM_ #-}
+mapM_ :: MonadIO m
+      => ReadChannel a -- ^'ReadChannel'
+      -> WriteChannel b -- ^'ReadChannel'
+      -> (a -> m (Maybe b)) -- ^Monadic Transformation to do with read element
+      -> m ()
+mapM_ rc wc f = foldM_ rc $ maybe (pure ()) (`push` wc) <=< f
+
+-- | Alias 'mapM_'
+(|>=>) :: MonadIO m => ReadChannel a -> WriteChannel b -> (a -> m (Maybe b)) -> m ()
+(|>=>) = mapM_
+
+infixr 5 |>=>
+
+-- | Same as 'mapM_' but mark Eof Channel after all processing
+{-# INLINE mapMF_ #-}
+mapMF_ :: MonadIO m
+       => ReadChannel a -- ^'ReadChannel'
+       -> WriteChannel b -- ^'ReadChannel'
+       -> (a -> m (Maybe b)) -- ^Monadic Transformation to do with read element
+       -> m ()
+mapMF_ rc wc f = mapM_ rc wc f >> finish wc
+
+-- | Alias 'mapMF_'
+(|>=>|) :: MonadIO m => ReadChannel a -> WriteChannel b -> (a -> m (Maybe b)) -> m ()
+(|>=>|) = mapMF_
+
+infixr 5 |>=>|
+
 
 -- | 'foldM_' is a /Catamorphism/ for consuming a 'ReadChannel' and do some Monadic @m@ computation with each element
 {-# INLINE foldM_ #-}
@@ -97,7 +172,7 @@ unfoldM :: forall m a b
 unfoldM = loop'
  where
   loop' seed fn stopIfM writeChannel =
-    ifM stopIfM (pure ()) (seed >>= flip push writeChannel . fn >> loop' seed fn stopIfM writeChannel)
+    ifM stopIfM (finish writeChannel) (seed >>= flip push writeChannel . fn >> loop' seed fn stopIfM writeChannel)
 -- | Using 'unfoldM', unfold from file
 {-# INLINE unfoldFile #-}
 unfoldFile :: MonadIO m
@@ -111,7 +186,7 @@ unfoldFile file writeChannel fn =
 -- | Idem 'unfoldM' but for 'Foldable', for example a List @[a]@. Useful for testing purpose
 {-# INLINE unfoldT #-}
 unfoldT :: (MonadIO m, Foldable t) => t a -> WriteChannel b -> (a -> b) -> m ()
-unfoldT ts writeChannel fn = forM_ ts (flip push writeChannel . fn)
+unfoldT ts writeChannel fn = forM_ ts (flip push writeChannel . fn) >> finish writeChannel
 
 {-# WARNING newChannel "INTERNAL USE" #-}
 {-# NOINLINE newChannel #-}
