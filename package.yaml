@@ -1,5 +1,5 @@
 name:       dynamic-pipeline
-version:    0.3.1.1
+version:    0.3.1.2
 category:   Data,Data Flow,Pipes,Streaming,Parallel,Type-safe
 author:     Juan Pablo Royo Sales
 maintainer: juanpablo.royo@gmail.com
@@ -117,9 +117,11 @@ executables:
     dependencies:
       - dynamic-pipeline
       - async
+      - containers
       - HList
       - optparse-applicative
       - trifecta
+      - relude
     ghc-options:
       - -threaded
       - -O3

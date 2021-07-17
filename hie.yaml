@@ -1,0 +1,22 @@
+cradle:
+  cabal:
+    - path: "src"
+      component: "lib:dynamic-pipeline"
+
+    - path: "examples/Main.hs"
+      component: "dynamic-pipeline:exe:examples"
+
+    - path: "examples/Graph.ConnComp.hs"
+      component: "dynamic-pipeline:exe:examples"
+
+    - path: "examples/Graph.ConnectedComp.hs"
+      component: "dynamic-pipeline:exe:examples"
+
+    - path: "examples/Misc.RepeatedDP.hs"
+      component: "dynamic-pipeline:exe:examples"
+
+    - path: "examples/Misc.RepeatedTwiceDP.hs"
+      component: "dynamic-pipeline:exe:examples"
+
+    - path: "test"
+      component: "dynamic-pipeline:test:conn-comp-tests"
