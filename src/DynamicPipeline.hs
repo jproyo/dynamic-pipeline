@@ -132,11 +132,11 @@ import DynamicPipeline.Channel
 import DynamicPipeline.Stage
 
 -- $grammar
--- The following is the Regular Grammar allowed to build a /DPP/ Flow definition:
+-- The following is the Context Free Grammar allowed to build a /DPP/ Flow definition:
 -- 
 -- @
 -- __DP__       -> 'Source' __CHANS__ ':=>' 'Generator' __CHANS__ ':=>' 'Sink'
--- __DP__       -> 'Source' __CHANS ':=>' 'Generator' __CHANS__ ':=>' __FEEDBACK__ ':=>' 'Sink'
+-- __DP__       -> 'Source' __CHANS__ ':=>' 'Generator' __CHANS__ ':=>' __FEEDBACK__ ':=>' 'Sink'
 -- __CHANS__    -> 'Channel' __CH__
 -- __FEEDBACK__ -> 'FeedbackChannel' __CH__
 -- __CH__       -> 'Type' ':<+>' __CH__ | 'Eof'
