@@ -373,7 +373,7 @@ runFilter :: ( CloseList ss
              , ArityRev (WithFilter dpDefinition filterParam filterState (DP st)) n
              ) => Filter dpDefinition filterState filterParam st -> HList xs -> HList ss -> DP st (Async ())
 runFilter f clist cClose = DP $ async $ do
-  void . runStage . mapM_ (`runActor` clist) . unFilter $ f
+  void . runStage . forever . mapM_ (`runActor` clist) . unFilter $ f
   closeList cClose
 
 -- | Combinator for Building a 'Source' Stage. It uses an Associated Type Class to deduce the Function Signature required to the user
