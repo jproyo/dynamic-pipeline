@@ -13,33 +13,33 @@ import           Relude
 
 type DPExample = Source (Channel (Int :<+> Eof)) :=> Generator (Channel (Int :<+> Eof)) :=> Sink
 
-source' :: Stage (WriteChannel Int -> DP s ())
+source' :: Stage (WriteChannel Int -> IO ())
 source' = withSource @DPExample $ \cout -> unfoldT ([1 .. 1000] <> [1 .. 1000]) cout identity
 
-generator' :: GeneratorStage DPExample (Maybe Int) Int s
+generator' :: GeneratorStage DPExample (Maybe Int) Int
 generator' =
   let gen = withGenerator @DPExample genAction
   in  mkGenerator gen filterTemp
 
-genAction :: Filter DPExample (Maybe Int) Int s 
+genAction :: Filter DPExample (Maybe Int) Int
           -> ReadChannel Int
           -> WriteChannel Int
-          -> DP s ()
+          -> IO ()
 genAction filter' cin cout =
   let unfoldFilter = mkUnfoldFilterForAll' (`push` cout) filter' Just cin HNil 
    in void $ unfoldF unfoldFilter
 
-filterTemp :: Filter DPExample (Maybe Int) Int s 
+filterTemp :: Filter DPExample (Maybe Int) Int
 filterTemp = mkFilter actorRepeted
 
 actorRepeted :: IORef (Maybe Int)
              -> Int
              -> ReadChannel Int
              -> WriteChannel Int
-             -> DP s ()
+             -> IO ()
 actorRepeted _ i rc wc = foldM_ rc $ \e -> if e /= i then push e wc else pure ()
 
-sink' :: Stage (ReadChannel Int -> DP s ())
+sink' :: Stage (ReadChannel Int -> IO ())
 sink' = withSink @DPExample $ flip foldM_ print
 
 program :: IO ()

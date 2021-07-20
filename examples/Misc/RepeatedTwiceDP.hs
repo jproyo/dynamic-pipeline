@@ -16,18 +16,18 @@ type DPExample =   Source (Channel (Int :<+> Int :<+> Double :<+> String :<+> Eo
                :=> FeedbackChannel (String :<+> Eof)
                :=> Sink
 
-source' :: Stage (ReadChannel String -> WriteChannel Int -> WriteChannel Int -> WriteChannel Double -> WriteChannel String -> DP st ())
+source' :: Stage (ReadChannel String -> WriteChannel Int -> WriteChannel Int -> WriteChannel Double -> WriteChannel String -> IO ())
 source' = withSource @DPExample $ \feedback cout cout' cout'' toFilter -> do 
     finish cout' >> finish cout''
     unfoldT ([1 .. 10] <> [1 .. 10]) cout identity
     feedback |=> toFilter
 
-generator' :: GeneratorStage DPExample (Maybe Int) Int s
+generator' :: GeneratorStage DPExample (Maybe Int) Int
 generator' =
   let gen = withGenerator @DPExample genAction
    in  mkGenerator gen filterTemp
 
-genAction :: Filter DPExample (Maybe Int) Int st 
+genAction :: Filter DPExample (Maybe Int) Int 
           -> ReadChannel Int 
           -> ReadChannel Int 
           -> ReadChannel Double
@@ -36,14 +36,14 @@ genAction :: Filter DPExample (Maybe Int) Int st
           -> WriteChannel Int 
           -> WriteChannel Double
           -> WriteChannel String 
-          -> DP st ()
+          -> IO ()
 genAction filter' cin cin' cdn cin'' _ _ odn cout = do
     let unfoldFilter = mkUnfoldFilterForAll filter' Just cin (cin' .*. cdn .*. cin'' .*. HNil)
     HCons ft (HCons sec _) <- unfoldF unfoldFilter
     ft |=>| cout $ show
     sec |=>| odn $ id
 
-filterTemp :: Filter DPExample (Maybe Int) Int s 
+filterTemp :: Filter DPExample (Maybe Int) Int
 filterTemp = mkFilter actorRepeted
 
 actorRepeted :: IORef (Maybe Int)
@@ -56,7 +56,7 @@ actorRepeted :: IORef (Maybe Int)
              -> WriteChannel Int
              -> WriteChannel Double
              -> WriteChannel String
-             -> DP s ()
+             -> IO ()
 actorRepeted _ i rc rc' rd rs wc wc' wd wc'' = do
   rc |>=>| wc $ \e -> do 
     -- putTextLn $ "1) Elem: " <> show e <> " - Param: " <> show i
@@ -74,7 +74,7 @@ actorRepeted _ i rc rc' rd rs wc wc' wd wc'' = do
   rd |=>| wd $ id
 
 
-sink' :: Stage (ReadChannel Int -> ReadChannel Int -> ReadChannel Double -> DP s ())
+sink' :: Stage (ReadChannel Int -> ReadChannel Int -> ReadChannel Double -> IO ())
 sink' = withSink @DPExample $ \_ _ ci -> foldM_ ci print
 
 program :: IO ()
