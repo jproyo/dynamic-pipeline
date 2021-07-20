@@ -25,18 +25,19 @@ genAction :: Filter DPExample (Maybe Int) Int s
           -> ReadChannel Int
           -> WriteChannel Int
           -> DP s ()
-genAction filter' cin cout = 
+genAction filter' cin cout =
   let unfoldFilter = mkUnfoldFilterForAll' (`push` cout) filter' Just cin HNil 
    in void $ unfoldF unfoldFilter
 
 filterTemp :: Filter DPExample (Maybe Int) Int s 
 filterTemp = mkFilter actorRepeted
 
-actorRepeted :: Int
+actorRepeted :: IORef (Maybe Int)
+             -> Int
              -> ReadChannel Int
              -> WriteChannel Int
-             -> StateT (Maybe Int) (DP s) ()
-actorRepeted i rc wc = foldM_ rc $ \e -> if e /= i then push e wc else pure ()
+             -> DP s ()
+actorRepeted _ i rc wc = foldM_ rc $ \e -> if e /= i then push e wc else pure ()
 
 sink' :: Stage (ReadChannel Int -> DP s ())
 sink' = withSink @DPExample $ flip foldM_ print

@@ -112,6 +112,8 @@ data ChansFilter (a :: Type)
 data ChanWriteSource (a :: Type)
 {-# WARNING ChanReadWriteGen "INTERNAL USE" #-}
 data ChanReadWriteGen (a :: Type)
+{-# WARNING ChanReadWriteF "INTERNAL USE" #-}
+data ChanReadWriteF (a :: Type)
 {-# WARNING ChanReadOut "INTERNAL USE" #-}
 data ChanReadOut (a :: Type)
 
@@ -179,7 +181,6 @@ type instance ExpandToHList (ChanReadWriteGen ( Source (Channel inToGen)
                                             :=> FeedbackChannel toSource
                                             :=> Sink)
                             ) filter = filter ': HAppendListR (HAppendListR (HChI inToGen) (HChO genToOut)) (HChO toSource)
-
 type instance ExpandToHList (ChanReadOut ( Source (Channel inToGen)
                                        :=> Generator (Channel genToOut)
                                        :=> Sink )
@@ -190,12 +191,26 @@ type instance ExpandToHList (ChanReadOut ( Source (Channel inToGen)
                                        :=> Sink )
                             ) filter = HChI genToOut
 
+
+
+{-# WARNING ExpandToHListF "INTERNAL USE" #-}
+type family ExpandToHListF (a :: Type) (param :: Type) (state :: Type) :: [Type]
+type instance ExpandToHListF (ChanReadWriteF ( Source (Channel inToGen)
+                                            :=> Generator (Channel genToOut)
+                                            :=> Sink)
+                            ) param state = IORef state ': param ': HAppendListR (HChI inToGen) (HChO genToOut)
+type instance ExpandToHListF (ChanReadWriteF ( Source (Channel inToGen)
+                                            :=> Generator (Channel genToOut)
+                                            :=> FeedbackChannel toSource
+                                            :=> Sink)
+                            ) param state = IORef state ': param ': HAppendListR (HAppendListR (HChI inToGen) (HChO genToOut)) (HChO toSource)
+
 {-# WARNING ExpandSourceToCh "INTERNAL USE" #-}
 type ExpandSourceToCh a = ExpandToHList (ChanWriteSource a) Void
 {-# WARNING ExpandGenToCh "INTERNAL USE" #-}
 type ExpandGenToCh a filter = ExpandToHList (ChanReadWriteGen a) filter
 {-# WARNING ExpandFilterToCh "INTERNAL USE" #-}
-type ExpandFilterToCh a param = ExpandGenToCh a param
+type ExpandFilterToCh a param state = ExpandToHListF a param state
 {-# WARNING ExpandSinkToCh "INTERNAL USE" #-}
 type ExpandSinkToCh a = ExpandToHList (ChanReadOut a) Void
 

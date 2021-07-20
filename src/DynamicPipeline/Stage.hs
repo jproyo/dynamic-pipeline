@@ -145,24 +145,25 @@ type family WithGenerator (a :: Type) (filter :: Type) (monadicAction :: Type ->
                                                                                ':$$: 'Text "Example: 'Source (Channel (Int :<+> Int)) :=> Generator (Channel (Int :<+> Int)) :=> Sink'"
                                                                              )
      
-type family WithFilter (dpDefinition :: Type) (param :: Type) (monadicAction :: Type -> Type) :: Type where
-  WithFilter (Source (Channel inToGen) :=> Generator (Channel genToOut) :=> Sink) param monadicAction
-                                                    = param -> WithFilter (ChanOutIn inToGen genToOut) param monadicAction
-  WithFilter (Source (Channel inToGen) :=> Generator (Channel genToOut) :=> FeedbackChannel toSource  :=> Sink) param monadicAction
-                                                    = param -> WithFilter (ChanOutIn inToGen (ChanInIn genToOut toSource)) param monadicAction
-  WithFilter (ChanInIn (a :<+> more) ins) param monadicAction       
-                                                    = WriteChannel a -> WithFilter (ChanInIn more ins) param monadicAction
-  WithFilter (ChanInIn Eof ins) param monadicAction                 
-                                                    = WithFilter (ChanIn ins) param monadicAction
-  WithFilter (ChanIn (dpDefinition :<+> more)) param monadicAction         
-                                                    = WriteChannel dpDefinition -> WithFilter (ChanIn more) param monadicAction
-  WithFilter (ChanIn Eof) param monadicAction       = monadicAction ()
-  WithFilter (ChanOutIn (dpDefinition :<+> more) ins) param monadicAction  
-                                                    = ReadChannel dpDefinition -> WithFilter (ChanOutIn more ins) param monadicAction
-  WithFilter (ChanOutIn Eof (ChanInIn ins ins2)) param monadicAction 
-                                                    = WithFilter (ChanInIn ins ins2) param monadicAction
-  WithFilter (ChanOutIn Eof ins) param m            = WithFilter (ChanIn ins) param m
-  WithFilter dpDefinition _ _                       = TypeError
+type family WithFilter (dpDefinition :: Type) (param :: Type) (filterState :: Type) (monadicAction :: Type -> Type) :: Type where
+  WithFilter (Source (Channel inToGen) :=> Generator (Channel genToOut) :=> Sink) param filterState monadicAction
+                                                    = IORef filterState -> param -> WithFilter (ChanOutIn inToGen genToOut) param filterState monadicAction
+  WithFilter (Source (Channel inToGen) :=> Generator (Channel genToOut) :=> FeedbackChannel toSource  :=> Sink) param filterState monadicAction
+                                                    = IORef filterState -> param -> WithFilter (ChanOutIn inToGen (ChanInIn genToOut toSource)) param filterState monadicAction
+  WithFilter (ChanInIn (a :<+> more) ins) param filterState monadicAction       
+                                                    = WriteChannel a -> WithFilter (ChanInIn more ins) param filterState monadicAction
+  WithFilter (ChanInIn Eof ins) param filterState monadicAction                 
+                                                    = WithFilter (ChanIn ins) param filterState monadicAction
+  WithFilter (ChanIn (dpDefinition :<+> more)) param filterState monadicAction         
+                                                    = WriteChannel dpDefinition -> WithFilter (ChanIn more) param filterState monadicAction
+  WithFilter (ChanIn Eof) param filterState monadicAction       
+                                                    = monadicAction ()
+  WithFilter (ChanOutIn (dpDefinition :<+> more) ins) param filterState monadicAction  
+                                                    = ReadChannel dpDefinition -> WithFilter (ChanOutIn more ins) param filterState monadicAction
+  WithFilter (ChanOutIn Eof (ChanInIn ins ins2)) param filterState monadicAction 
+                                                    = WithFilter (ChanInIn ins ins2) param filterState monadicAction
+  WithFilter (ChanOutIn Eof ins) param s m          = WithFilter (ChanIn ins) param s m
+  WithFilter dpDefinition _ _ _                     = TypeError
                                                         ( 'Text "Invalid Semantic Semantic for Generator Stage"
                                                           ':$$: 'Text "in the DP Definition '"
                                                           ':<>: 'ShowType dpDefinition
@@ -292,7 +293,7 @@ data GeneratorStage dpDefinition filterState filterParam st = GeneratorStage
 --
 -- [@st@]: Existential Scope of 'DP' 'Monad'.
 newtype Filter dpDefinition filterState filterParam st =
-  Filter { unFilter :: NonEmpty (Actor dpDefinition filterState filterParam (StateT filterState (DP st))) }
+  Filter { unFilter :: NonEmpty (Actor dpDefinition filterState filterParam (DP st)) }
   deriving Generic
 
 instance Wrapped (Filter s' s a param)
@@ -307,7 +308,7 @@ instance Wrapped (Filter s' s a param)
 --
 -- [@monadicAction@]: 'Monad' Wrapped in 'StateT'.
 newtype Actor dpDefinition filterState filterParam monadicAction =
-  Actor {  unActor :: MonadState filterState monadicAction => Stage (WithFilter dpDefinition filterParam monadicAction) }
+  Actor { unActor :: Stage (WithFilter dpDefinition filterParam filterState monadicAction) }
 
 
 -- | Smart Constructor of 'GeneratorStage'.
@@ -320,29 +321,29 @@ mkGenerator = GeneratorStage
 -- | Smart Constructor of 'Filter'.
 {-# INLINE mkFilter #-}
 mkFilter :: forall dpDefinition filterState filterParam st. 
-            WithFilter dpDefinition filterParam (StateT filterState (DP st)) -- ^Associated type family to Generate Function Signature
+            WithFilter dpDefinition filterParam filterState (DP st) -- ^Associated type family to Generate Function Signature
          -> Filter dpDefinition filterState filterParam st
 mkFilter = Filter . single
 
 -- | Smart Constructor of Single 'Actor' Wrapped in 'NonEmpty' List.  
 {-# INLINE single #-}
 single :: forall dpDefinition filterState filterParam st. 
-          WithFilter dpDefinition filterParam (StateT filterState (DP st)) -- ^Associated type family to Generate Function Signature
-       -> NonEmpty (Actor dpDefinition filterState filterParam (StateT filterState (DP st)))
+          WithFilter dpDefinition filterParam filterState (DP st) -- ^Associated type family to Generate Function Signature
+       -> NonEmpty (Actor dpDefinition filterState filterParam (DP st))
 single = one . actor
 
 -- | Smart Constructor of 'Actor'.
 {-# INLINE actor #-}
 actor :: forall dpDefinition filterState filterParam st.
-         WithFilter dpDefinition filterParam (StateT filterState (DP st)) -- ^Associated type family to Generate Function Signature
-      -> Actor dpDefinition filterState filterParam (StateT filterState (DP st))
-actor = Actor . mkStage' @(WithFilter dpDefinition filterParam (StateT filterState (DP st)))
+         WithFilter dpDefinition filterParam filterState (DP st) -- ^Associated type family to Generate Function Signature
+      -> Actor dpDefinition filterState filterParam (DP st)
+actor = Actor . mkStage' @(WithFilter dpDefinition filterParam filterState (DP st))
 
 -- | Combinator to build 'Filter' in a /DSL/ approach.
 -- Add a new 'Actor' to an already existing 'Filter'.
 {-# INLINE (|>>>) #-}
 (|>>>) :: forall dpDefinition filterState filterParam st. 
-          Actor dpDefinition filterState filterParam (StateT filterState (DP st)) -- ^New 'Actor' to put on front
+          Actor dpDefinition filterState filterParam (DP st) -- ^New 'Actor' to put on front
        -> Filter dpDefinition filterState filterParam st -- ^Existing 'Filter'
        -> Filter dpDefinition filterState filterParam st
 (|>>>) a f = f & _Wrapped' %~ (a <|)
@@ -352,28 +353,27 @@ infixr 5 |>>>
 -- Given 2 'Actor's build a 'Filter'.
 {-# INLINE (|>>) #-}
 (|>>) :: forall dpDefinition filterState filterParam st. 
-         Actor dpDefinition filterState filterParam (StateT filterState (DP st)) -- ^'Actor' 1
-      -> Actor dpDefinition filterState filterParam (StateT filterState (DP st)) -- ^'Actor' 2
+         Actor dpDefinition filterState filterParam (DP st) -- ^'Actor' 1
+      -> Actor dpDefinition filterState filterParam (DP st) -- ^'Actor' 2
       -> Filter dpDefinition filterState filterParam st
 (|>>) a1 a2 = Filter (a1 <|one a2)
 infixr 5 |>>
 
 {-# INLINE runActor #-}
-runActor :: ( MonadState filterState monadicAction
-            , HCurry' n (WithFilter dpDefinition filterParam monadicAction) xs r
-            , ArityFwd (WithFilter dpDefinition filterParam monadicAction) n
-            , ArityRev (WithFilter dpDefinition filterParam monadicAction) n
+runActor :: ( HCurry' n (WithFilter dpDefinition filterParam filterState monadicAction) xs r
+            , ArityFwd (WithFilter dpDefinition filterParam filterState monadicAction) n
+            , ArityRev (WithFilter dpDefinition filterParam filterState monadicAction) n
             ) => Actor dpDefinition filterState filterParam monadicAction -> HList xs -> r
 runActor = hUncurry . run . unActor
 
 {-# INLINE runFilter #-}
 runFilter :: ( CloseList ss
-             , HCurry' n (WithFilter dpDefinition filterParam (StateT filterState (DP st))) xs (StateT filterState2 (DP st) ())
-             , ArityFwd (WithFilter dpDefinition filterParam (StateT filterState (DP st))) n
-             , ArityRev (WithFilter dpDefinition filterParam (StateT filterState (DP st))) n
-             ) => Filter dpDefinition filterState filterParam st -> filterState2 -> HList xs -> HList ss -> DP st (Async ())
-runFilter f s clist cClose = DP $ async $ do
-  void . runStage . flip evalStateT s  . mapM_ (`runActor` clist) . unFilter $ f
+             , HCurry' n (WithFilter dpDefinition filterParam filterState (DP st)) xs (DP st ())
+             , ArityFwd (WithFilter dpDefinition filterParam filterState (DP st)) n
+             , ArityRev (WithFilter dpDefinition filterParam filterState (DP st)) n
+             ) => Filter dpDefinition filterState filterParam st -> HList xs -> HList ss -> DP st (Async ())
+runFilter f clist cClose = DP $ async $ do
+  void . runStage . mapM_ (`runActor` clist) . unFilter $ f
   closeList cClose
 
 -- | Combinator for Building a 'Source' Stage. It uses an Associated Type Class to deduce the Function Signature required to the user
@@ -500,12 +500,12 @@ type SpawnFilterConstraint dpDefinition readElem st filterState filterParam l l1
                 , CloseList (ReadChannel readElem ': l4)
                 , HAppendList l l3
                 , l4 ~ HAppendListR l l3
-                , l2 ~ (readElem ': ReadChannel readElem ': l4)
+                , b2 ~ readElem
+                , l2 ~ (IORef filterState ': readElem ': ReadChannel readElem ': l4)
                 , HChan (ChansFilter dpDefinition) ~ InOutChan (ReadChannel readElem : l) l3
-                , WithFilter dpDefinition filterParam (StateT filterState (DP st)) ~ (b2 -> ReadChannel b2 -> b3)
-                , HLength (ExpandFilterToCh dpDefinition filterParam) ~ HLength l2
-                , HCurry' (HLength l2) (WithFilter dpDefinition filterParam (StateT filterState (DP st))) l2 (StateT filterState (DP st) ())
-                , ArityFwd (WithFilter dpDefinition filterParam (StateT filterState (DP st))) (HLength (ExpandFilterToCh dpDefinition filterParam))
+                , WithFilter dpDefinition filterParam filterState (DP st) ~ (IORef filterState -> b2 -> ReadChannel b2 -> b3)
+                , HCurry' (HLength l2) (WithFilter dpDefinition filterParam filterState (DP st)) l2 (DP st ())
+                , ArityFwd (WithFilter dpDefinition filterParam filterState (DP st)) (HLength l2)
                 , ArityRev b3 (HLength l4)
                 )
 
@@ -590,9 +590,10 @@ unfoldF = loopSpawn
       _ufOnElem elem'
       if _ufSpawnIf elem'
         then do
+          state' <- R.newIORef (_ufInitState elem')
           (reads', writes' :: HList l3) <- getFilterChannels <$> DP (makeChansF @(ChansFilter dpDefinition))
-          let hlist = elem' .*. _ufReadChannel .*. (_ufRsChannels `hAppendList` writes')
-          void $ runFilter _ufFilter (_ufInitState elem') hlist (_ufReadChannel .*. (_ufRsChannels `hAppendList` writes'))
+          let hlist = state' .*. elem' .*. _ufReadChannel .*. (_ufRsChannels `hAppendList` writes')
+          void $ runFilter _ufFilter hlist (_ufReadChannel .*. (_ufRsChannels `hAppendList` writes'))
           return $ uf { _ufReadChannel = hHead reads', _ufRsChannels = hTail reads' }
         else return uf
 

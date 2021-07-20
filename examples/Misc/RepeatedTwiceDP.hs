@@ -46,7 +46,8 @@ genAction filter' cin cin' cdn cin'' _ _ odn cout = do
 filterTemp :: Filter DPExample (Maybe Int) Int s 
 filterTemp = mkFilter actorRepeted
 
-actorRepeted :: Int
+actorRepeted :: IORef (Maybe Int)
+             -> Int
              -> ReadChannel Int
              -> ReadChannel Int
              -> ReadChannel Double
@@ -55,8 +56,8 @@ actorRepeted :: Int
              -> WriteChannel Int
              -> WriteChannel Double
              -> WriteChannel String
-             -> StateT (Maybe Int) (DP s) ()
-actorRepeted i rc rc' rd rs wc wc' wd wc'' = do
+             -> DP s ()
+actorRepeted _ i rc rc' rd rs wc wc' wd wc'' = do
   rc |>=>| wc $ \e -> do 
     -- putTextLn $ "1) Elem: " <> show e <> " - Param: " <> show i
     if e /= i then pure $ Just e else pure Nothing

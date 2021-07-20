@@ -34,33 +34,35 @@ generator' =
 filterTemplate :: Filter DPConnComp ConnectedComponents Edge st
 filterTemplate = actor actor1 |>> actor actor2
 
-actor1 :: Edge
+actor1 :: IORef ConnectedComponents
+       -> Edge
        -> ReadChannel Edge
        -> ReadChannel ConnectedComponents
        -> WriteChannel Edge
        -> WriteChannel ConnectedComponents
-       -> StateT ConnectedComponents (DP st) ()
-actor1 _ readEdge _ writeEdge _ = 
-  foldM_ readEdge $ \e -> get >>= doActor e
+       -> DP st ()
+actor1 ref _ readEdge _ writeEdge _ = 
+  foldM_ readEdge $ \e -> readIORef ref >>= doActor e
  where
   doActor v conn
-    | toConnectedComp v `intersect` conn = modify (toConnectedComp v <>)
+    | toConnectedComp v `intersect` conn = writeIORef ref (toConnectedComp v <> conn)
     | otherwise = push v writeEdge
 
-actor2 :: Edge
+actor2 :: IORef ConnectedComponents
+       -> Edge
        -> ReadChannel Edge
        -> ReadChannel ConnectedComponents
        -> WriteChannel Edge
        -> WriteChannel ConnectedComponents
-       -> StateT ConnectedComponents (DP st) ()
-actor2 _ _ readCC _ writeCC = do 
-  foldWithM_ readCC pushMemory $ \e -> get >>= doActor e
+       -> DP st ()
+actor2 ref _ _ readCC _ writeCC = do 
+  foldWithM_ readCC pushMemory $ \e -> readIORef ref >>= doActor e
 
  where
-   pushMemory = get >>= flip push writeCC
+   pushMemory = readIORef ref >>= flip push writeCC
 
    doActor cc conn
-    | cc `intersect` conn = modify (cc <>)
+    | cc `intersect` conn = writeIORef ref (cc <> conn)
     | otherwise = push cc writeCC
 
 
@@ -74,7 +76,6 @@ genAction filter' readEdge readCC _ writeCC = do
   let unfoldFilter = mkUnfoldFilterForAll filter' toConnectedComp readEdge (readCC .*. HNil) 
   results <- unfoldF unfoldFilter
   foldM_ (hHead results) (`push` writeCC)
-
 
 program :: FilePath -> IO ()
 program file = runDP $ mkDP @DPConnComp (source' file) generator' sink'

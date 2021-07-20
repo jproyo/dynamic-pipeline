@@ -6,16 +6,16 @@ cradle:
     - path: "examples/Main.hs"
       component: "dynamic-pipeline:exe:examples"
 
-    - path: "examples/Graph.ConnComp.hs"
+    - path: "examples/Graph/ConnComp.hs"
       component: "dynamic-pipeline:exe:examples"
 
-    - path: "examples/Graph.ConnectedComp.hs"
+    - path: "examples/Graph/ConnectedComp.hs"
       component: "dynamic-pipeline:exe:examples"
 
-    - path: "examples/Misc.RepeatedDP.hs"
+    - path: "examples/Misc/RepeatedDP.hs"
       component: "dynamic-pipeline:exe:examples"
 
-    - path: "examples/Misc.RepeatedTwiceDP.hs"
+    - path: "examples/Misc/RepeatedTwiceDP.hs"
       component: "dynamic-pipeline:exe:examples"
 
     - path: "test"
