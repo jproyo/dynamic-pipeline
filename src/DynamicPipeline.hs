@@ -57,6 +57,14 @@
 -- program = 'runDP' $ 'mkDP' @DPExample source\' generator\' sink\'
 -- @
 --
+-- Some visual representation of /DP/ and how this is happening under the hood
+--
+-- @
+-- 'Source' >> 'Filter'_1(runStateT $ actor_1 >> actor_2 >> ... actor_n) ..... >> 'Generator'  >> 'Sink'
+--    |            |                                                                  |              |   
+--  Async        Async                                                              Async          Async      
+-- @
+--
 module DynamicPipeline 
     ( -- * DP Flow Grammar #grammar#
       -- $grammar

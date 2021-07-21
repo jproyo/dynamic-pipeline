@@ -5,7 +5,7 @@ cabal-version: 1.12
 -- see: https://github.com/sol/hpack
 
 name:           dynamic-pipeline
-version:        0.3.1.2
+version:        0.3.1.3
 synopsis:       Library Type Safe implementation of Dynamic Pipeline Paradigm (DPP).
 description:    @dynamic-pipeline@ is a __/Type Safe/__ Dynamic and Parallel Streaming Library, which is an implementation of __Dynamic Pipeline Paradigm (DPP)__ 
                 proposed in this paper [DPP](https://biblioteca.sistedes.es/articulo/the-dynamic-pipeline-paradigm/).
