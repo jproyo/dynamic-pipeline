@@ -453,9 +453,10 @@ buildDPProg :: forall dpDefinition filterState st filterParam filter gparams slr
 buildDPProg DynamicPipeline{..} = do
   (cIns, cGen, cOut) <- inGenOut <$> withDP (makeChans @dpDefinition)
   let genWithFilter   = _gsFilterTemplate generator .*. cGen
-  runStageWith source cIns
-    >> runStageWith' @(HLength (ExpandGenToCh dpDefinition filter)) @gparams (_gsGenerator generator) genWithFilter cGen
-    >> runStageWith sink cOut >>= DP . wait
+  asyncSource <- runStageWith source cIns
+  asyncGen <- runStageWith' @(HLength (ExpandGenToCh dpDefinition filter)) @gparams (_gsGenerator generator) genWithFilter cGen
+  asyncSink <- runStageWith sink cOut 
+  DP $ mapConcurrently_ wait [asyncSource, asyncGen, asyncSink]
 
 -- | Smart constructor for 'DynamicPipeline' Definition
 {-# INLINE mkDP #-}
