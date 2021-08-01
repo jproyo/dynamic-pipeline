@@ -147,7 +147,7 @@ push a c = liftIO $ writeChan (unWrite c) (Just a)
 -- | Pull element @Maybe a@ from 'ReadChannel'
 {-# INLINE pull #-}
 pull :: MonadIO m => ReadChannel a -> m (Maybe a)
-pull = liftIO . readChan (CC.threadDelay 100) . unRead
+pull = liftIO . readChan CC.yield . unRead
 
 -- | Finalize Channel to indicate EOF mark and allow progress on following consumers
 finish :: MonadIO m => WriteChannel a -> m ()
